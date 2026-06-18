@@ -1,0 +1,454 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- ENUMS ----------
+
+enum MemberRole {
+  OWNER
+  DISPATCHER
+  TECHNICIAN
+}
+
+enum ServiceNiche {
+  PLUMBING
+  HVAC
+  ELECTRICAL
+  ROOFING
+  PEST_CONTROL
+  CLEANING
+  APPLIANCE_REPAIR
+  HANDYMAN
+  GENERAL_REPAIR
+  OTHER
+}
+
+enum ConversationChannel {
+  WEB_CHAT
+  SMS
+  WHATSAPP
+  VOICE
+  EMAIL
+}
+
+enum ConversationStatus {
+  NEW_LEAD
+  AI_HANDLING
+  HUMAN_NEEDED
+  BOOKED
+  COMPLETED
+  LOST
+}
+
+enum MessageSender {
+  CUSTOMER
+  AI
+  HUMAN_AGENT
+  SYSTEM
+}
+
+enum JobStatus {
+  NEW_LEAD
+  QUALIFIED
+  ESTIMATE_REQUESTED
+  BOOKED
+  DISPATCHED
+  IN_PROGRESS
+  COMPLETED
+  PAID
+  REVIEW_REQUESTED
+  LOST_CANCELLED
+}
+
+enum UrgencyLevel {
+  LOW
+  NORMAL
+  HIGH
+  EMERGENCY
+}
+
+enum CustomerType {
+  RESIDENTIAL
+  COMMERCIAL
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  RESCHEDULED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  VOID
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum NotificationType {
+  NEW_LEAD
+  URGENT_LEAD
+  HUMAN_HANDOFF
+  NEW_BOOKING
+  CANCELLED_BOOKING
+  JOB_COMPLETED
+  PAYMENT_RECEIVED
+  AI_FAILURE
+  MISSED_CALL_RECOVERED
+}
+
+// ---------- CORE / AUTH ----------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  phone        String?
+  isSuperAdmin Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships   BusinessMember[]
+  technician    Technician?
+  notifications Notification[]   @relation("NotificationRecipient")
+  auditLogs     AuditLog[]
+}
+
+model Business {
+  id                  String       @id @default(cuid())
+  name                String
+  niche               ServiceNiche @default(GENERAL_REPAIR)
+  email               String?
+  phone               String?
+  website             String?
+  openingHours        Json? // { mon: {open,close}, ... }
+  emergencyAvailable  Boolean      @default(false)
+  diagnosticFee       Decimal?     @db.Decimal(10, 2)
+  googleReviewLink    String?
+  onboardingCompleted Boolean      @default(false)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  members            BusinessMember[]
+  customers          Customer[]
+  conversations      Conversation[]
+  messages           Message[]
+  jobs               Job[]
+  services           Service[]
+  technicians        Technician[]
+  appointments       Appointment[]
+  invoices           Invoice[]
+  payments           Payment[]
+  notifications      Notification[]
+  serviceAreas       ServiceArea[]
+  aiSetting          AiSetting?
+  integrationSetting IntegrationSetting?
+  auditLogs          AuditLog[]
+}
+
+model BusinessMember {
+  id         String     @id @default(cuid())
+  businessId String
+  userId     String
+  role       MemberRole @default(OWNER)
+  createdAt  DateTime   @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([businessId])
+}
+
+// ---------- CRM / OPERATIONS ----------
+
+model Customer {
+  id          String       @id @default(cuid())
+  businessId  String
+  name        String?
+  phone       String?
+  email       String?
+  address     String?
+  zipCode     String?
+  type        CustomerType @default(RESIDENTIAL)
+  isReturning Boolean      @default(false)
+  notes       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  jobs          Job[]
+  appointments  Appointment[]
+  invoices      Invoice[]
+
+  @@index([businessId])
+  @@index([businessId, phone])
+}
+
+model Conversation {
+  id            String              @id @default(cuid())
+  businessId    String
+  customerId    String?
+  channel       ConversationChannel @default(WEB_CHAT)
+  status        ConversationStatus  @default(NEW_LEAD)
+  externalRef   String? // e.g. twilio number, web session id
+  aiActive      Boolean             @default(true)
+  lastMessageAt DateTime            @default(now())
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  messages Message[]
+  job      Job?
+
+  @@index([businessId])
+  @@index([businessId, status])
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  businessId     String
+  conversationId String
+  sender         MessageSender
+  content        String
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+
+  business     Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  description String?
+  basePrice   Decimal? @db.Decimal(10, 2)
+  durationMin Int      @default(60)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  jobs     Job[]
+
+  @@index([businessId])
+}
+
+model Technician {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String?  @unique
+  name       String
+  phone      String?
+  email      String?
+  skills     String[]
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  jobs         Job[]
+  appointments Appointment[]
+
+  @@index([businessId])
+}
+
+model Job {
+  id                String       @id @default(cuid())
+  businessId        String
+  customerId        String?
+  serviceId         String?
+  technicianId      String?
+  conversationId    String?      @unique
+  title             String
+  problem           String?
+  address           String?
+  zipCode           String?
+  urgency           UrgencyLevel @default(NORMAL)
+  status            JobStatus    @default(NEW_LEAD)
+  customerType      CustomerType @default(RESIDENTIAL)
+  scheduledAt       DateTime?
+  amountCharged     Decimal?     @db.Decimal(10, 2)
+  notes             String?
+  reviewRequestedAt DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer     Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  service      Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  technician   Technician?   @relation(fields: [technicianId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  appointments Appointment[]
+  invoices     Invoice[]
+
+  @@index([businessId])
+  @@index([businessId, status])
+}
+
+model Appointment {
+  id             String            @id @default(cuid())
+  businessId     String
+  jobId          String?
+  customerId     String?
+  technicianId   String?
+  startAt        DateTime
+  endAt          DateTime
+  status         AppointmentStatus @default(SCHEDULED)
+  reminderSentAt DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  business   Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  job        Job?        @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  customer   Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  technician Technician? @relation(fields: [technicianId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([businessId, startAt])
+}
+
+// ---------- BILLING ----------
+
+model Invoice {
+  id                  String        @id @default(cuid())
+  businessId          String
+  jobId               String?
+  customerId          String?
+  number              String
+  amount              Decimal       @db.Decimal(10, 2)
+  status              InvoiceStatus @default(DRAFT)
+  stripePaymentLinkId String?
+  stripeInvoiceId     String?
+  dueDate             DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  job      Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  payments Payment[]
+
+  @@unique([businessId, number])
+  @@index([businessId])
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  businessId            String
+  invoiceId             String?
+  amount                Decimal       @db.Decimal(10, 2)
+  status                PaymentStatus @default(PENDING)
+  stripePaymentIntentId String?
+  paidAt                DateTime?
+  createdAt             DateTime      @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  invoice  Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+}
+
+// ---------- SYSTEM / CONFIG ----------
+
+model Notification {
+  id          String           @id @default(cuid())
+  businessId  String
+  recipientId String?
+  type        NotificationType
+  title       String
+  body        String?
+  read        Boolean          @default(false)
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+
+  business  Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recipient User?    @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([businessId, read])
+}
+
+model ServiceArea {
+  id         String   @id @default(cuid())
+  businessId String
+  zipCode    String
+  city       String?
+  label      String?
+  createdAt  DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, zipCode])
+  @@index([businessId])
+}
+
+model AiSetting {
+  id                   String   @id @default(cuid())
+  businessId           String   @unique
+  greeting             String?
+  tone                 String   @default("friendly") // friendly | professional | casual
+  personaName          String   @default("Assistant")
+  systemPromptOverride String?
+  bookingEnabled       Boolean  @default(true)
+  collectPhotos        Boolean  @default(true)
+  emergencyKeywords    String[] @default([])
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model IntegrationSetting {
+  id                String   @id @default(cuid())
+  businessId        String   @unique
+  twilioAccountSid  String?
+  twilioAuthToken   String? // TODO: encrypt at rest before production
+  twilioPhoneNumber String?
+  whatsappNumber    String?
+  stripeAccountId   String?
+  googleCalendarId  String?
+  googleMapsApiKey  String?
+  zapierWebhookUrl  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  businessId String?
+  userId     String?
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+}
