@@ -49,11 +49,15 @@ export async function POST(req: Request) {
   });
 
   const businessServices = await prisma.service.findMany({
-    where: { businessId },
-    select: { name: true },
+    where: { businessId, active: true },
+    select: { name: true, niche: true, basePrice: true },
     orderBy: { name: "asc" },
   });
-  const serviceNames = businessServices.map((s) => s.name);
+  const promptServices = businessServices.map((s) => ({
+    name: s.name,
+    niche: s.niche,
+    basePrice: s.basePrice != null ? Number(s.basePrice) : null,
+  }));
 
   const session = sessionId || "web_" + Math.random().toString(36).slice(2, 12);
 
@@ -138,7 +142,7 @@ export async function POST(req: Request) {
     }));
 
   const systemPrompt =
-    buildSystemPrompt(business, aiSetting, serviceNames) +
+    buildSystemPrompt(business, aiSetting, promptServices) +
     (emergency.isEmergency
       ? "\nIMPORTANT: The customer's last message may describe an emergency. Respond with urgency and reassurance, and tell them a team member is being alerted now."
       : "");

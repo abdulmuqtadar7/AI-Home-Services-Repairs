@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { nicheLabel } from "@/lib/serviceCatalog";
 
 const DEFAULT_EMERGENCY_KEYWORDS = [
   "burst",
@@ -38,6 +38,7 @@ export function detectEmergency(message: string, extraKeywords: string[] = []) {
 type BusinessLike = {
   name: string;
   niche: string;
+  trades?: string[] | null;
   emergencyAvailable: boolean;
   diagnosticFee: unknown;
 };
@@ -50,35 +51,78 @@ type AiSettingLike = {
   bookingEnabled: boolean;
 } | null;
 
+export type PromptService = {
+  name: string;
+  niche?: string | null;
+  basePrice?: number | string | null;
+};
+
+function formatService(s: PromptService): string {
+  const n = typeof s.basePrice === "number" ? s.basePrice : Number(s.basePrice);
+  const price = Number.isFinite(n) && n > 0 ? ` (from $${n})` : "";
+  return `${s.name}${price}`;
+}
+
 export function buildSystemPrompt(
   business: BusinessLike,
   ai: AiSettingLike,
-  services: string[] = [],
+  services: PromptService[] = [],
 ) {
   if (ai?.systemPromptOverride && ai.systemPromptOverride.trim()) {
     return ai.systemPromptOverride;
   }
   const persona = ai?.personaName || "Assistant";
   const tone = ai?.tone || "friendly";
-  const rawNiche = business.niche.toLowerCase();
-  const niche = rawNiche.replace(/_/g, " ");
-  const multiTrade = ["general_repair", "handyman", "other"].includes(rawNiche);
-  const serviceList = services.filter((s) => s && s.trim());
-  const servicesText = serviceList.length
-    ? ` such as ${serviceList.join(", ")}`
-    : "";
 
+  // Resolve the trades this business covers: prefer the multi-select list,
+  // fall back to the single primary niche.
+  const trades =
+    business.trades && business.trades.length > 0
+      ? business.trades
+      : [business.niche];
+  const multiTrade = trades.length > 1;
+  const tradeLabels = trades.map((t) => nicheLabel(t));
+
+  const cleanServices = services.filter((s) => s && s.name && s.name.trim());
+
+  // Identity
   const identityLine = multiTrade
-    ? `You are ${persona}, the ${tone} AI receptionist for ${business.name}, a multi-trade home services and repair business that handles a wide range of home repair needs across different trades.`
-    : `You are ${persona}, the ${tone} AI receptionist for ${business.name}, a ${niche} business.`;
+    ? `You are ${persona}, the ${tone} AI receptionist for ${business.name}, a multi-trade home services and repair business that handles ${tradeLabels.join(", ")}.`
+    : `You are ${persona}, the ${tone} AI receptionist for ${business.name}, a ${tradeLabels[0]?.toLowerCase() || "home services"} business.`;
 
+  // Services block: grouped by category for multi-trade, flat otherwise.
+  let servicesBlock = "";
+  if (cleanServices.length) {
+    if (multiTrade) {
+      const groups = new Map<string, PromptService[]>();
+      for (const s of cleanServices) {
+        const key = s.niche || "OTHER";
+        const arr = groups.get(key);
+        if (arr) arr.push(s);
+        else groups.set(key, [s]);
+      }
+      const parts: string[] = [];
+      for (const [key, list] of groups) {
+        parts.push(
+          `- ${nicheLabel(key)}: ${list.map(formatService).join(", ")}`,
+        );
+      }
+      servicesBlock = `Services this business offers, grouped by category:\n${parts.join("\n")}`;
+    } else {
+      servicesBlock = `Services this business offers: ${cleanServices.map(formatService).join(", ")}.`;
+    }
+  }
+
+  // Scope / guardrails
   const scopeLine = multiTrade
-    ? `${business.name} handles many kinds of home repairs and services${servicesText}. Help with any reasonable home-repair or home-services request. Only decline things that are clearly not home services at all (for example legal, medical, or completely unrelated topics).`
-    : `${business.name} specializes in ${niche}${serviceList.length ? ` and offers services like ${serviceList.join(", ")}` : ""}. If a customer asks for work in a clearly different trade that this business does not offer, politely explain it is outside your expertise and offer to connect them with the team, instead of booking it.`;
+    ? `${business.name} works across these trades: ${tradeLabels.join(", ")}. Help with any reasonable request that falls within these trades. When a customer's need spans more than one trade, figure out which trade it belongs to. Politely decline work that is clearly outside all of these trades, or anything that is not a home service at all (for example legal, medical, or unrelated topics), and offer to connect them with the team.`
+    : `${business.name} specializes in ${tradeLabels[0]?.toLowerCase() || "home services"}. If a customer asks for work in a clearly different trade that this business does not offer, politely explain it is outside your expertise and offer to connect them with the team, instead of booking it.`;
 
   const lines = [
     identityLine,
+    servicesBlock,
     `Your job: greet customers, understand their problem, qualify the lead, and help them book a service visit.`,
+    `Use the services list above to recognize what the customer needs, suggest the most relevant service, and give a rough idea of scope. Only reference services this business actually offers.`,
     `Be concise, warm, and professional. Ask only one question at a time.`,
     `Collect the customer's name, phone number, service address, and a clear description of the problem.`,
     ai?.bookingEnabled
@@ -87,7 +131,7 @@ export function buildSystemPrompt(
     business.emergencyAvailable
       ? `This business offers emergency service. If the issue sounds urgent or dangerous, reassure the customer and tell them a team member is being alerted immediately.`
       : `This business does not guarantee emergency service. For dangerous issues, advise contacting emergency services and that the team will follow up as soon as possible.`,
-    `Never guarantee pricing.${business.diagnosticFee ? " If asked about cost, you may mention that a diagnostic or service-call fee may apply." : ""}`,
+    `Never guarantee exact pricing. The prices listed are starting points only.${business.diagnosticFee ? " If asked about cost, you may mention that a diagnostic or service-call fee may apply." : ""}`,
     `If the customer wants a human or asks something you cannot handle, tell them you will connect them with the team.`,
     scopeLine,
   ];
