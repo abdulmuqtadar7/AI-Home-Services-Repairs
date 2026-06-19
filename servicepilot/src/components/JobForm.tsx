@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { nicheLabel } from "@/lib/serviceCatalog";
 
 export type JobInput = {
   id?: string;
@@ -31,6 +32,7 @@ export type JobInput = {
 };
 
 type Option = { id: string; name: string };
+type ServiceOption = { id: string; name: string; niche?: string | null };
 type Tech = { id: string; name: string; skills: string[] };
 
 type NewCustomer = {
@@ -71,11 +73,13 @@ export function JobForm({
   customers,
   technicians,
   services,
+  trades = [],
 }: {
   initial?: Partial<JobInput>;
   customers: Option[];
   technicians: Tech[];
-  services: Option[];
+  services: ServiceOption[];
+  trades?: string[];
 }) {
   const router = useRouter();
   const editing = Boolean(initial?.id);
@@ -94,6 +98,16 @@ export function JobForm({
     amountCharged: initial?.amountCharged ?? "",
     notes: initial?.notes ?? "",
   });
+  const multiTrade = trades.length > 1;
+
+  // Pre-select the category of the currently chosen service (edit mode).
+  const initialCategory = useMemo(() => {
+    if (!multiTrade || !initial?.serviceId) return "";
+    const s = services.find((x) => x.id === initial.serviceId);
+    return s?.niche ?? "";
+  }, [multiTrade, initial?.serviceId, services]);
+  const [category, setCategory] = useState<string>(initialCategory);
+
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [newCustomer, setNewCustomer] = useState<NewCustomer>({
     name: "",
@@ -124,6 +138,22 @@ export function JobForm({
     }
     return base;
   }, [technicians, skill, form.technicianId]);
+
+  // Services shown in the dropdown: filtered by the picked category when the
+  // business works across multiple trades.
+  const visibleServices = useMemo(() => {
+    if (!multiTrade) return services;
+    if (!category) return [];
+    return services.filter((s) => s.niche === category);
+  }, [services, multiTrade, category]);
+
+  // If the chosen category no longer contains the selected service, clear it.
+  useEffect(() => {
+    if (!multiTrade || !form.serviceId) return;
+    if (!visibleServices.some((s) => s.id === form.serviceId)) {
+      setForm((f) => ({ ...f, serviceId: "" }));
+    }
+  }, [multiTrade, visibleServices, form.serviceId]);
 
   function set<K extends keyof JobInput>(key: K, value: JobInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -235,6 +265,24 @@ export function JobForm({
         />
       </div>
 
+      {multiTrade && (
+        <div>
+          <label className={labelCls}>Job category</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className={inputCls}
+          >
+            <option value="">— Select category —</option>
+            {trades.map((t) => (
+              <option key={t} value={t}>
+                {nicheLabel(t)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>Customer</label>
@@ -258,9 +306,12 @@ export function JobForm({
             value={form.serviceId}
             onChange={(e) => set("serviceId", e.target.value)}
             className={inputCls}
+            disabled={multiTrade && !category}
           >
-            <option value="">— None —</option>
-            {services.map((s) => (
+            <option value="">
+              {multiTrade && !category ? "Select a category first" : "— None —"}
+            </option>
+            {visibleServices.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>

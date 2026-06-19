@@ -135,6 +135,7 @@ model Business {
   id                  String         @id @default(cuid())
   name                String
   niche               ServiceNiche   @default(GENERAL_REPAIR)
+  trades              ServiceNiche[] @default([])
   email               String?
   phone               String?
   website             String?
@@ -242,14 +243,15 @@ model Message {
 }
 
 model Service {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   businessId  String
   name        String
+  niche       ServiceNiche?
   description String?
-  basePrice   Decimal? @db.Decimal(10, 2)
-  durationMin Int      @default(60)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  basePrice   Decimal?      @db.Decimal(10, 2)
+  durationMin Int           @default(60)
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   jobs     Job[]

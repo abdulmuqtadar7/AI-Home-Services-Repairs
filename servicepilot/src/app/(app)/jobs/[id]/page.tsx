@@ -15,8 +15,12 @@ export default async function JobDetailPage({
   if (!businessId) redirect("/onboarding");
 
   const { id } = await params;
-  const [job, customers, technicians, services] = await Promise.all([
+  const [job, business, customers, technicians, services] = await Promise.all([
     prisma.job.findFirst({ where: { id, businessId } }),
+    prisma.business.findUnique({
+      where: { id: businessId },
+      select: { trades: true, niche: true },
+    }),
     prisma.customer.findMany({
       where: { businessId },
       orderBy: { name: "asc" },
@@ -30,10 +34,17 @@ export default async function JobDetailPage({
     prisma.service.findMany({
       where: { businessId, active: true },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, niche: true },
     }),
   ]);
   if (!job) notFound();
+
+  const trades: string[] =
+    business?.trades && business.trades.length > 0
+      ? business.trades
+      : business?.niche
+        ? [business.niche]
+        : [];
 
   const initial: JobInput = {
     id: job.id,
@@ -76,6 +87,7 @@ export default async function JobDetailPage({
           }))}
           technicians={technicians}
           services={services}
+          trades={trades}
         />
       </div>
     </div>
