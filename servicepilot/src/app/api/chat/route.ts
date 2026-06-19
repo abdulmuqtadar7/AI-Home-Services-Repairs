@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   buildSystemPrompt,
   detectEmergency,
+  extractBooking,
   generateAiReply,
   type ChatTurn,
 } from "@/lib/ai";
@@ -103,6 +104,8 @@ export async function POST(req: Request) {
       reply: null,
       handoff: true,
       emergency: emergency.isEmergency,
+      booked: false,
+      jobId: null,
       status,
     });
   }
@@ -136,9 +139,88 @@ export async function POST(req: Request) {
     },
   });
 
+  // Attempt to turn a confirmed conversation into a real Job + Customer.
+  let bookedJobId: string | null = null;
+  let bookedCustomerId: string | null = null;
+  const bookingEnabled = aiSetting?.bookingEnabled !== false;
+  const userTurns = history.filter((h) => h.role === "user").length;
+  if (
+    bookingEnabled &&
+    !emergency.isEmergency &&
+    status !== "BOOKED" &&
+    userTurns >= 2
+  ) {
+    const existingJob = await prisma.job.findUnique({
+      where: { conversationId: conversation.id },
+    });
+    if (!existingJob) {
+      const extraction = await extractBooking([
+        ...history,
+        { role: "assistant", content: reply },
+      ]);
+      if (extraction.readyToBook) {
+        let customerId = conversation.customerId ?? null;
+        if (!customerId) {
+          const existingCustomer = extraction.phone
+            ? await prisma.customer.findFirst({
+                where: { businessId, phone: extraction.phone },
+              })
+            : null;
+          const customer =
+            existingCustomer ??
+            (await prisma.customer.create({
+              data: {
+                businessId,
+                name: extraction.customerName || null,
+                phone: extraction.phone || null,
+                address: extraction.address || null,
+              },
+            }));
+          customerId = customer.id;
+        }
+        bookedCustomerId = customerId;
+        const noteParts = [
+          extraction.preferredTime
+            ? "Preferred time: " + extraction.preferredTime
+            : "",
+          "Booked via AI web chat.",
+        ].filter(Boolean);
+        const job = await prisma.job.create({
+          data: {
+            businessId,
+            customerId,
+            conversationId: conversation.id,
+            title: extraction.problemSummary || "Web chat booking request",
+            problem: extraction.problemSummary || null,
+            address: extraction.address || null,
+            urgency: extraction.urgency,
+            status: "BOOKED",
+            notes: noteParts.join(" "),
+          },
+        });
+        bookedJobId = job.id;
+        status = "BOOKED";
+        await prisma.message.create({
+          data: {
+            businessId,
+            conversationId: conversation.id,
+            sender: "SYSTEM",
+            content: "Booking created from chat (Job " + job.id + ").",
+          },
+        });
+      }
+    }
+  }
+
   await prisma.conversation.update({
     where: { id: conversation.id },
-    data: { lastMessageAt: new Date(), status },
+    data: {
+      lastMessageAt: new Date(),
+      status,
+      ...(bookedCustomerId && !conversation.customerId
+        ? { customerId: bookedCustomerId }
+        : {}),
+    },
   });
 
   return NextResponse.json({
@@ -147,6 +229,8 @@ export async function POST(req: Request) {
     reply,
     handoff: false,
     emergency: emergency.isEmergency,
+    booked: Boolean(bookedJobId),
+    jobId: bookedJobId,
     status,
   });
 }

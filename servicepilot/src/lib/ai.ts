@@ -131,3 +131,94 @@ function fallbackReply(history: ChatTurn[]): string {
   }
   return "Thanks! A team member will follow up shortly to confirm everything. If it's urgent, please call us directly and we'll prioritize your request.";
 }
+
+export type BookingExtraction = {
+  readyToBook: boolean;
+  customerName: string;
+  phone: string;
+  address: string;
+  problemSummary: string;
+  preferredTime: string;
+  urgency: "LOW" | "NORMAL" | "HIGH" | "EMERGENCY";
+};
+
+const EMPTY_BOOKING: BookingExtraction = {
+  readyToBook: false,
+  customerName: "",
+  phone: "",
+  address: "",
+  problemSummary: "",
+  preferredTime: "",
+  urgency: "NORMAL",
+};
+
+function asString(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+export async function extractBooking(
+  history: ChatTurn[],
+): Promise<BookingExtraction> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  if (!apiKey) {
+    return EMPTY_BOOKING;
+  }
+  const transcript = history
+    .map(
+      (t) => (t.role === "user" ? "Customer" : "Assistant") + ": " + t.content,
+    )
+    .join("\n");
+  const sys =
+    "You analyze a home-services chat and extract booking details. " +
+    "Respond ONLY with a JSON object with these keys: " +
+    "readyToBook (boolean: true ONLY if the customer has clearly agreed to schedule or book a visit), " +
+    "customerName (string), phone (string), address (string), " +
+    "problemSummary (a short description of the issue), " +
+    "preferredTime (the day/time the customer wants, as text), " +
+    "urgency (one of: LOW, NORMAL, HIGH, EMERGENCY). " +
+    "Use an empty string for anything not provided. Do not invent values.";
+  try {
+    const res = await fetch(baseUrl + "/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + apiKey,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: sys },
+          { role: "user", content: "Conversation:\n" + transcript },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      return EMPTY_BOOKING;
+    }
+    const data = await res.json();
+    const raw = data?.choices?.[0]?.message?.content;
+    if (typeof raw !== "string") {
+      return EMPTY_BOOKING;
+    }
+    const parsed = JSON.parse(raw);
+    const urgency = ["LOW", "NORMAL", "HIGH", "EMERGENCY"].includes(
+      parsed?.urgency,
+    )
+      ? parsed.urgency
+      : "NORMAL";
+    return {
+      readyToBook: Boolean(parsed?.readyToBook),
+      customerName: asString(parsed?.customerName),
+      phone: asString(parsed?.phone),
+      address: asString(parsed?.address),
+      problemSummary: asString(parsed?.problemSummary),
+      preferredTime: asString(parsed?.preferredTime),
+      urgency,
+    };
+  } catch {
+    return EMPTY_BOOKING;
+  }
+}

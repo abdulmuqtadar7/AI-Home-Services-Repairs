@@ -14,6 +14,8 @@ type ChatResponse = {
   reply: string | null;
   handoff: boolean;
   emergency: boolean;
+  booked?: boolean;
+  jobId?: string | null;
   status: string;
 };
 
@@ -100,6 +102,17 @@ export function ChatWidget({
           },
         ]);
       }
+      if (data.booked) {
+        setMessages((m) => [
+          ...m,
+          {
+            id: "b_" + Date.now(),
+            role: "system",
+            content:
+              "Your visit request has been logged. Our team will confirm the details shortly.",
+          },
+        ]);
+      }
     } catch {
       setMessages((m) => [
         ...m,
@@ -112,6 +125,15 @@ export function ChatWidget({
     } finally {
       setSending(false);
     }
+  }
+
+  function resetChat() {
+    if (sending) return;
+    window.localStorage.removeItem("sp_chat_session_" + businessId);
+    setSessionId(null);
+    setEmergency(false);
+    setInput("");
+    setMessages([{ id: "greet", role: "assistant", content: greeting }]);
   }
 
   function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -132,18 +154,27 @@ export function ChatWidget({
                 We typically reply in a few minutes
               </p>
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="rounded p-1 text-gray-300 hover:bg-white/10 hover:text-white"
-              aria-label="Close chat"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={resetChat}
+                className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-white/10 hover:text-white"
+                aria-label="Start a new chat"
+              >
+                New chat
+              </button>
+              <button
+                onClick={() => setOpen(false)}
+                className="rounded p-1 text-gray-300 hover:bg-white/10 hover:text-white"
+                aria-label="Close chat"
+              >
+                {"\u2715"}
+              </button>
+            </div>
           </div>
 
           {emergency && (
             <div className="bg-red-50 px-4 py-2 text-xs font-medium text-red-700">
-              This looks urgent — a team member is being alerted now.
+              This looks urgent {"\u2014"} a team member is being alerted now.
             </div>
           )}
 
@@ -179,7 +210,7 @@ export function ChatWidget({
             {sending && (
               <div className="flex justify-start">
                 <div className="rounded-2xl bg-white px-3 py-2 text-sm text-gray-400 shadow-sm">
-                  …
+                  {"\u2026"}
                 </div>
               </div>
             )}
@@ -192,7 +223,7 @@ export function ChatWidget({
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKey}
                 rows={1}
-                placeholder="Type your message…"
+                placeholder="Type your message..."
                 className="max-h-24 flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
               />
               <button
@@ -212,7 +243,7 @@ export function ChatWidget({
         className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-900 text-2xl text-white shadow-lg transition hover:bg-gray-700"
         aria-label="Open chat"
       >
-        {open ? "✕" : "💬"}
+        {open ? "\u2715" : "\uD83D\uDCAC"}
       </button>
     </div>
   );
