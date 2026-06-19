@@ -8,6 +8,7 @@ type NavItem = { href: string; label: string; ready: boolean };
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", ready: true },
   { href: "/inbox", label: "Inbox", ready: true },
+  { href: "/chatbot", label: "AI Chatbot", ready: true },
   { href: "/jobs", label: "Jobs", ready: true },
   { href: "/customers", label: "Customers", ready: true },
   { href: "/calendar", label: "Calendar", ready: false },
