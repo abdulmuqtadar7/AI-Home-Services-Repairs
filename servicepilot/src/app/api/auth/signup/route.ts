@@ -23,20 +23,26 @@ export async function POST(req: Request) {
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
-    return NextResponse.json({ error: "Email already in use" }, { status: 409 });
+    return NextResponse.json(
+      { error: "Email already in use" },
+      { status: 409 },
+    );
   }
 
   const passwordHash = await hashPassword(password);
 
-  // Create the user, their business workspace, owner membership, and default
-  // AI + integration settings together in one transaction.
-  const result = await prisma.$transaction(async (tx) => {
+  // Self-signups start LOCKED: the business is created with status PENDING and
+  // no services are enabled until payment is confirmed (manually by an admin
+  // for now, or via Stripe later). The owner is signed in but routed to the
+  // billing/request-access page.
+  const { user, business } = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: { name, email, passwordHash },
     });
     const business = await tx.business.create({
       data: {
         name: businessName,
+        status: "PENDING",
         members: { create: { userId: user.id, role: "OWNER" } },
         aiSetting: { create: {} },
         integrationSetting: { create: {} },
@@ -46,13 +52,13 @@ export async function POST(req: Request) {
   });
 
   await createSessionCookie({
-    userId: result.user.id,
-    email: result.user.email,
-    name: result.user.name,
-    isSuperAdmin: result.user.isSuperAdmin,
-    businessId: result.business.id,
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    isSuperAdmin: user.isSuperAdmin,
+    businessId: business.id,
     role: "OWNER",
   });
 
-  return NextResponse.json({ ok: true, redirect: "/onboarding" });
+  return NextResponse.json({ ok: true, redirect: "/billing" });
 }

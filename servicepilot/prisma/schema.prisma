@@ -132,19 +132,21 @@ model User {
 }
 
 model Business {
-  id                  String       @id @default(cuid())
+  id                  String         @id @default(cuid())
   name                String
-  niche               ServiceNiche @default(GENERAL_REPAIR)
+  niche               ServiceNiche   @default(GENERAL_REPAIR)
   email               String?
   phone               String?
   website             String?
-  openingHours        Json? // { mon: {open,close}, ... }
-  emergencyAvailable  Boolean      @default(false)
-  diagnosticFee       Decimal?     @db.Decimal(10, 2)
+  openingHours        Json?
+  accessRequestedAt   DateTime?
+  emergencyAvailable  Boolean        @default(false)
+  diagnosticFee       Decimal?       @db.Decimal(10, 2)
   googleReviewLink    String?
-  onboardingCompleted Boolean      @default(false)
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  onboardingCompleted Boolean        @default(false)
+  status              BusinessStatus @default(ACTIVE)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
   members            BusinessMember[]
   customers          Customer[]
@@ -451,4 +453,10 @@ model AuditLog {
   user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([businessId])
+}
+
+enum BusinessStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
 }

@@ -50,15 +50,34 @@ type AiSettingLike = {
   bookingEnabled: boolean;
 } | null;
 
-export function buildSystemPrompt(business: BusinessLike, ai: AiSettingLike) {
+export function buildSystemPrompt(
+  business: BusinessLike,
+  ai: AiSettingLike,
+  services: string[] = [],
+) {
   if (ai?.systemPromptOverride && ai.systemPromptOverride.trim()) {
     return ai.systemPromptOverride;
   }
   const persona = ai?.personaName || "Assistant";
   const tone = ai?.tone || "friendly";
-  const niche = business.niche.toLowerCase().replace(/_/g, " ");
+  const rawNiche = business.niche.toLowerCase();
+  const niche = rawNiche.replace(/_/g, " ");
+  const multiTrade = ["general_repair", "handyman", "other"].includes(rawNiche);
+  const serviceList = services.filter((s) => s && s.trim());
+  const servicesText = serviceList.length
+    ? ` such as ${serviceList.join(", ")}`
+    : "";
+
+  const identityLine = multiTrade
+    ? `You are ${persona}, the ${tone} AI receptionist for ${business.name}, a multi-trade home services and repair business that handles a wide range of home repair needs across different trades.`
+    : `You are ${persona}, the ${tone} AI receptionist for ${business.name}, a ${niche} business.`;
+
+  const scopeLine = multiTrade
+    ? `${business.name} handles many kinds of home repairs and services${servicesText}. Help with any reasonable home-repair or home-services request. Only decline things that are clearly not home services at all (for example legal, medical, or completely unrelated topics).`
+    : `${business.name} specializes in ${niche}${serviceList.length ? ` and offers services like ${serviceList.join(", ")}` : ""}. If a customer asks for work in a clearly different trade that this business does not offer, politely explain it is outside your expertise and offer to connect them with the team, instead of booking it.`;
+
   const lines = [
-    `You are ${persona}, the ${tone} AI receptionist for ${business.name}, a ${niche} business.`,
+    identityLine,
     `Your job: greet customers, understand their problem, qualify the lead, and help them book a service visit.`,
     `Be concise, warm, and professional. Ask only one question at a time.`,
     `Collect the customer's name, phone number, service address, and a clear description of the problem.`,
@@ -70,7 +89,7 @@ export function buildSystemPrompt(business: BusinessLike, ai: AiSettingLike) {
       : `This business does not guarantee emergency service. For dangerous issues, advise contacting emergency services and that the team will follow up as soon as possible.`,
     `Never guarantee pricing.${business.diagnosticFee ? " If asked about cost, you may mention that a diagnostic or service-call fee may apply." : ""}`,
     `If the customer wants a human or asks something you cannot handle, tell them you will connect them with the team.`,
-    `Stay strictly on topic for ${business.name}. Do not answer unrelated questions.`,
+    scopeLine,
   ];
   return lines.filter(Boolean).join("\n");
 }

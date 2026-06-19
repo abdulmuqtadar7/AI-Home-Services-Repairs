@@ -41,6 +41,21 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // A super admin has no business of their own. Until they pick one via
+  // "Open workspace" on Platform Admin, send them there instead of the tenant
+  // onboarding/register screen.
+  if (
+    isProtected &&
+    session &&
+    session.isSuperAdmin &&
+    !session.businessId &&
+    !pathname.startsWith("/super-admin")
+  ) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/super-admin";
+    return NextResponse.redirect(url);
+  }
+
   // Logged-in users shouldn't see login/signup.
   if (isAuthPage && session) {
     const url = req.nextUrl.clone();

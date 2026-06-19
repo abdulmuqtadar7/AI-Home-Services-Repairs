@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { SwitchBusinessButton } from "./SwitchBusinessButton";
 
 export default async function SuperAdminPage() {
   const user = await getCurrentUser();
@@ -57,6 +58,7 @@ export default async function SuperAdminPage() {
               <th className="px-5 py-3 font-medium">Niche</th>
               <th className="px-5 py-3 font-medium">Members</th>
               <th className="px-5 py-3 font-medium">Jobs</th>
+              <th className="px-5 py-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -68,6 +70,9 @@ export default async function SuperAdminPage() {
                 <td className="px-5 py-3">{b.niche.toLowerCase()}</td>
                 <td className="px-5 py-3">{b._count.members}</td>
                 <td className="px-5 py-3">{b._count.jobs}</td>
+                <td className="px-5 py-3">
+                  <SwitchBusinessButton businessId={b.id} />
+                </td>
               </tr>
             ))}
           </tbody>

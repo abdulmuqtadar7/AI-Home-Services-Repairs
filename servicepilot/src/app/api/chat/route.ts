@@ -36,9 +36,24 @@ export async function POST(req: Request) {
   if (!business) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
   }
+
+  // Locked tenants (PENDING payment / SUSPENDED) get no AI service.
+  if (business.status !== "ACTIVE") {
+    return NextResponse.json(
+      { error: "This assistant is currently unavailable." },
+      { status: 403 },
+    );
+  }
   const aiSetting = await prisma.aiSetting.findUnique({
     where: { businessId },
   });
+
+  const businessServices = await prisma.service.findMany({
+    where: { businessId },
+    select: { name: true },
+    orderBy: { name: "asc" },
+  });
+  const serviceNames = businessServices.map((s) => s.name);
 
   const session = sessionId || "web_" + Math.random().toString(36).slice(2, 12);
 
@@ -123,7 +138,7 @@ export async function POST(req: Request) {
     }));
 
   const systemPrompt =
-    buildSystemPrompt(business, aiSetting) +
+    buildSystemPrompt(business, aiSetting, serviceNames) +
     (emergency.isEmergency
       ? "\nIMPORTANT: The customer's last message may describe an emergency. Respond with urgency and reassurance, and tell them a team member is being alerted now."
       : "");
