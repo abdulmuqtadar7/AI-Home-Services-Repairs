@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getApiContext } from "@/lib/api-context";
+import { can } from "@/lib/rbac";
 
 const JOB_STATUSES = [
   "NEW_LEAD",
@@ -87,9 +88,13 @@ export async function PATCH(
   const { businessId } = ctx;
   const { id } = await params;
 
+  const role = ctx.user.memberships[0]?.role;
+  const isSuperAdmin = ctx.user.isSuperAdmin;
+  const canEdit = can(role, "editJobs", { isSuperAdmin });
+
   const existing = await prisma.job.findFirst({
     where: { id, businessId },
-    select: { id: true },
+    select: { id: true, technicianId: true },
   });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -104,6 +109,39 @@ export async function PATCH(
     );
   }
   const d = parsed.data;
+
+  // Non-editors (technicians) may only advance the status of a job assigned to
+  // them. No reassigning, no editing any other field.
+  if (!canEdit) {
+    const myTech = await prisma.technician.findFirst({
+      where: { businessId, userId: ctx.user.id },
+      select: { id: true },
+    });
+    if (!myTech || existing.technicianId !== myTech.id) {
+      return NextResponse.json(
+        { error: "You can only update jobs assigned to you" },
+        { status: 403 },
+      );
+    }
+    const provided = Object.keys(d).filter(
+      (k) => (d as Record<string, unknown>)[k] !== undefined,
+    );
+    if (
+      d.status === undefined ||
+      provided.length === 0 ||
+      !provided.every((k) => k === "status")
+    ) {
+      return NextResponse.json(
+        { error: "You can only change the job status" },
+        { status: 403 },
+      );
+    }
+    const job = await prisma.job.update({
+      where: { id },
+      data: { status: d.status },
+    });
+    return NextResponse.json({ ok: true, job });
+  }
 
   if (
     d.customerId &&
@@ -177,6 +215,16 @@ export async function DELETE(
 ) {
   const ctx = await getApiContext();
   if (!ctx.ok) return ctx.res;
+
+  // Only owners/dispatchers (and super admins) may delete jobs.
+  const role = ctx.user.memberships[0]?.role;
+  if (!can(role, "editJobs", { isSuperAdmin: ctx.user.isSuperAdmin })) {
+    return NextResponse.json(
+      { error: "You do not have permission to delete jobs" },
+      { status: 403 },
+    );
+  }
+
   const { id } = await params;
   const existing = await prisma.job.findFirst({
     where: { id, businessId: ctx.businessId },

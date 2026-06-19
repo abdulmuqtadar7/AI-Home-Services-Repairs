@@ -3,19 +3,32 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import clsx from "clsx";
+import { can, normalizeRole, type Capability } from "@/lib/rbac";
 
-type NavItem = { href: string; label: string; ready: boolean };
+type NavItem = {
+  href: string;
+  label: string;
+  ready: boolean;
+  // Capability required to see this entry. null = visible to every role
+  // (the Jobs entry, which technicians see as a filtered "My Jobs").
+  cap: Capability | null;
+};
 
 const NAV: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", ready: true },
-  { href: "/inbox", label: "Inbox", ready: true },
-  { href: "/chatbot", label: "AI Chatbot", ready: true },
-  { href: "/jobs", label: "Jobs", ready: true },
-  { href: "/customers", label: "Customers", ready: true },
-  { href: "/calendar", label: "Calendar", ready: false },
-  { href: "/technicians", label: "Technicians", ready: false },
-  { href: "/payments", label: "Payments", ready: false },
-  { href: "/settings", label: "Settings", ready: false },
+  { href: "/dashboard", label: "Dashboard", ready: true, cap: "viewDashboard" },
+  { href: "/inbox", label: "Inbox", ready: true, cap: "viewInbox" },
+  { href: "/chatbot", label: "AI Chatbot", ready: true, cap: "viewChatbot" },
+  { href: "/jobs", label: "Jobs", ready: true, cap: null },
+  { href: "/customers", label: "Customers", ready: true, cap: "viewCustomers" },
+  { href: "/calendar", label: "Calendar", ready: false, cap: "viewDashboard" },
+  {
+    href: "/technicians",
+    label: "Technicians",
+    ready: false,
+    cap: "manageTechnicians",
+  },
+  { href: "/payments", label: "Payments", ready: false, cap: "manageBilling" },
+  { href: "/settings", label: "Settings", ready: false, cap: "manageSettings" },
 ];
 
 const PLATFORM_NAV: { href: string; label: string; exact: boolean }[] = [
@@ -30,6 +43,7 @@ export function Sidebar({
   businessName,
   userName,
   role,
+  roleKey,
   isSuperAdmin,
   actingBusinessId,
   businesses,
@@ -37,6 +51,7 @@ export function Sidebar({
   businessName: string;
   userName: string;
   role: string;
+  roleKey: string;
   isSuperAdmin: boolean;
   actingBusinessId: string | null;
   businesses: Business[];
@@ -50,6 +65,13 @@ export function Sidebar({
     pathname === "/super-admin" || pathname.startsWith("/super-admin/");
   const platformMode = isSuperAdmin && onPlatformAdmin;
   const inBusinessMode = isSuperAdmin && !onPlatformAdmin && !!actingBusinessId;
+
+  // Only show the nav entries this role is allowed to use. Super admins acting
+  // inside a business see everything (owner-level).
+  const isTechnician = !isSuperAdmin && normalizeRole(roleKey) === "TECHNICIAN";
+  const visibleNav = NAV.filter((item) =>
+    item.cap === null ? true : can(roleKey, item.cap, { isSuperAdmin }),
+  );
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
@@ -191,7 +213,9 @@ export function Sidebar({
           )}
 
           <nav className="flex-1 space-y-1 px-3">
-            {NAV.map((item) => {
+            {visibleNav.map((item) => {
+              const label =
+                item.href === "/jobs" && isTechnician ? "My Jobs" : item.label;
               const active =
                 pathname === item.href || pathname.startsWith(item.href + "/");
               if (!item.ready) {
@@ -200,7 +224,7 @@ export function Sidebar({
                     key={item.href}
                     className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-400"
                   >
-                    <span>{item.label}</span>
+                    <span>{label}</span>
                     <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
                       soon
                     </span>
@@ -218,7 +242,7 @@ export function Sidebar({
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
                   )}
                 >
-                  {item.label}
+                  {label}
                 </Link>
               );
             })}

@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifySession, SESSION_COOKIE } from "@/lib/jwt";
+import { can, canAccessPath, landingPath } from "@/lib/rbac";
 
 const PROTECTED = [
   "/dashboard",
   "/onboarding",
   "/inbox",
+  "/chatbot",
   "/customers",
   "/jobs",
   "/calendar",
@@ -56,6 +58,30 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Role-based access for business members. Super admins are handled above and
+  // the platform area has its own guard, so both are excluded here. Onboarding
+  // stays open to every member. The "/jobs" list is open to all roles
+  // (technicians get a filtered "My Jobs"), but any deeper "/jobs/*" route
+  // (create form or job detail) requires job-editing rights.
+  if (
+    isProtected &&
+    session &&
+    !session.isSuperAdmin &&
+    session.businessId &&
+    !pathname.startsWith("/super-admin") &&
+    !pathname.startsWith("/onboarding")
+  ) {
+    const role = session.role;
+    const deeperJobs = pathname !== "/jobs" && pathname.startsWith("/jobs/");
+    const blocked =
+      !canAccessPath(pathname, role) || (deeperJobs && !can(role, "editJobs"));
+    if (blocked) {
+      const url = req.nextUrl.clone();
+      url.pathname = landingPath(role);
+      return NextResponse.redirect(url);
+    }
+  }
+
   // Logged-in users shouldn't see login/signup.
   if (isAuthPage && session) {
     const url = req.nextUrl.clone();
@@ -71,6 +97,7 @@ export const config = {
     "/dashboard/:path*",
     "/onboarding/:path*",
     "/inbox/:path*",
+    "/chatbot/:path*",
     "/customers/:path*",
     "/jobs/:path*",
     "/calendar/:path*",

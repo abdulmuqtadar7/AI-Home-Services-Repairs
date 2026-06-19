@@ -64,12 +64,19 @@ export default async function AppLayout({
       ? membership.role.charAt(0) + membership.role.slice(1).toLowerCase()
       : "Member";
 
+  // Raw role key (OWNER/DISPATCHER/TECHNICIAN) the sidebar uses to decide which
+  // navigation entries to render. Super admins get owner-level visibility.
+  const roleKey = user.isSuperAdmin
+    ? "OWNER"
+    : (membership?.role ?? "TECHNICIAN");
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
         businessName={businessName}
         userName={user.name}
         role={role}
+        roleKey={roleKey}
         isSuperAdmin={user.isSuperAdmin}
         actingBusinessId={actingBusinessId}
         businesses={businesses}

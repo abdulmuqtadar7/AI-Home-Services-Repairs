@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getApiContext } from "@/lib/api-context";
+import { can } from "@/lib/rbac";
 
 const JOB_STATUSES = [
   "NEW_LEAD",
@@ -65,9 +66,23 @@ export async function GET(req: Request) {
   const status = params.get("status")?.trim();
   const q = params.get("q")?.trim();
 
+  // Technicians may only list jobs assigned to them.
+  const role = ctx.user.memberships[0]?.role;
+  const isTechnician =
+    !ctx.user.isSuperAdmin && normalizeRoleSafe(role) === "TECHNICIAN";
+  let technicianId: string | null = null;
+  if (isTechnician) {
+    const tech = await prisma.technician.findFirst({
+      where: { businessId: ctx.businessId, userId: ctx.user.id },
+      select: { id: true },
+    });
+    technicianId = tech?.id ?? "__none__";
+  }
+
   const jobs = await prisma.job.findMany({
     where: {
       businessId: ctx.businessId,
+      ...(isTechnician ? { technicianId: technicianId ?? "__none__" } : {}),
       ...(status ? { status: status as (typeof JOB_STATUSES)[number] } : {}),
       ...(q
         ? {
@@ -89,10 +104,26 @@ export async function GET(req: Request) {
   return NextResponse.json({ jobs });
 }
 
+// Local helper so this route stays self-contained for role checks.
+function normalizeRoleSafe(role?: string | null): string {
+  return role === "OWNER" || role === "DISPATCHER" || role === "TECHNICIAN"
+    ? role
+    : "TECHNICIAN";
+}
+
 export async function POST(req: Request) {
   const ctx = await getApiContext();
   if (!ctx.ok) return ctx.res;
   const { businessId } = ctx;
+
+  // Only owners/dispatchers (and super admins) may create jobs.
+  const role = ctx.user.memberships[0]?.role;
+  if (!can(role, "createJobs", { isSuperAdmin: ctx.user.isSuperAdmin })) {
+    return NextResponse.json(
+      { error: "You do not have permission to create jobs" },
+      { status: 403 },
+    );
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
