@@ -86,6 +86,7 @@ export const ROUTE_CAPABILITY: ReadonlyArray<{
   { prefix: "/technicians", capability: "manageTechnicians" },
   { prefix: "/payments", capability: "manageBilling" },
   { prefix: "/settings", capability: "manageSettings" },
+  { prefix: "/services", capability: "manageSettings" },
   { prefix: "/jobs/new", capability: "createJobs" },
 ];
 

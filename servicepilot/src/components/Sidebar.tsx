@@ -29,6 +29,12 @@ const NAV: NavItem[] = [
   },
   { href: "/payments", label: "Payments", ready: false, cap: "manageBilling" },
   { href: "/settings", label: "Settings", ready: true, cap: "manageSettings" },
+  {
+    href: "/services",
+    label: "Service catalog",
+    ready: true,
+    cap: "manageSettings",
+  },
 ];
 
 const PLATFORM_NAV: { href: string; label: string; exact: boolean }[] = [
