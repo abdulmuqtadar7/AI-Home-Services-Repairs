@@ -204,6 +204,11 @@ export async function POST(req: Request) {
             : "",
           "Booked via AI web chat.",
         ].filter(Boolean);
+        let scheduledAt: Date | null = null;
+        if (extraction.preferredDateIso) {
+          const dt = new Date(extraction.preferredDateIso);
+          if (!Number.isNaN(dt.getTime())) scheduledAt = dt;
+        }
         const job = await prisma.job.create({
           data: {
             businessId,
@@ -214,6 +219,7 @@ export async function POST(req: Request) {
             address: extraction.address || null,
             urgency: extraction.urgency,
             status: "BOOKED",
+            scheduledAt,
             notes: noteParts.join(" "),
           },
         });

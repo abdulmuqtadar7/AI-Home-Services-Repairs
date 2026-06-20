@@ -37,11 +37,6 @@ export function ChatWidget({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("sp_chat_session_" + businessId);
-    if (stored) setSessionId(stored);
-  }, [businessId]);
-
-  useEffect(() => {
     if (open && messages.length === 0) {
       setMessages([{ id: "greet", role: "assistant", content: greeting }]);
     }
@@ -80,10 +75,6 @@ export function ChatWidget({
       }
       if (data.sessionId && data.sessionId !== sessionId) {
         setSessionId(data.sessionId);
-        window.localStorage.setItem(
-          "sp_chat_session_" + businessId,
-          data.sessionId,
-        );
       }
       setEmergency(data.emergency);
       if (data.reply) {
@@ -129,7 +120,6 @@ export function ChatWidget({
 
   function resetChat() {
     if (sending) return;
-    window.localStorage.removeItem("sp_chat_session_" + businessId);
     setSessionId(null);
     setEmergency(false);
     setInput("");

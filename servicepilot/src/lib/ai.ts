@@ -202,6 +202,7 @@ export type BookingExtraction = {
   address: string;
   problemSummary: string;
   preferredTime: string;
+  preferredDateIso: string;
   urgency: "LOW" | "NORMAL" | "HIGH" | "EMERGENCY";
 };
 
@@ -212,6 +213,7 @@ const EMPTY_BOOKING: BookingExtraction = {
   address: "",
   problemSummary: "",
   preferredTime: "",
+  preferredDateIso: "",
   urgency: "NORMAL",
 };
 
@@ -232,13 +234,18 @@ export async function extractBooking(
       (t) => (t.role === "user" ? "Customer" : "Assistant") + ": " + t.content,
     )
     .join("\n");
+  const today = new Date().toISOString();
   const sys =
     "You analyze a home-services chat and extract booking details. " +
+    "Today's date and time is " +
+    today +
+    " (UTC). " +
     "Respond ONLY with a JSON object with these keys: " +
-    "readyToBook (boolean: true ONLY if the customer has clearly agreed to schedule or book a visit), " +
+    "readyToBook (boolean: true if the customer has agreed to schedule or book a visit, or has clearly stated a day/time they want to be seen), " +
     "customerName (string), phone (string), address (string), " +
     "problemSummary (a short description of the issue), " +
-    "preferredTime (the day/time the customer wants, as text), " +
+    "preferredTime (the day/time the customer wants, as free text), " +
+    "preferredDateIso (the preferred day/time as an absolute ISO 8601 timestamp like 2026-07-01T09:00:00; resolve relative dates such as tomorrow or next Monday against today, never return a past date, and if a day is given with no time default to 09:00; empty string if no specific day was requested), " +
     "urgency (one of: LOW, NORMAL, HIGH, EMERGENCY). " +
     "Use an empty string for anything not provided. Do not invent values.";
   try {
@@ -279,6 +286,7 @@ export async function extractBooking(
       address: asString(parsed?.address),
       problemSummary: asString(parsed?.problemSummary),
       preferredTime: asString(parsed?.preferredTime),
+      preferredDateIso: asString(parsed?.preferredDateIso),
       urgency,
     };
   } catch {
