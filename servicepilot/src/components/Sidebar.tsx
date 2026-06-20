@@ -24,7 +24,7 @@ const NAV: NavItem[] = [
   {
     href: "/technicians",
     label: "Technicians",
-    ready: false,
+    ready: true,
     cap: "manageTechnicians",
   },
   { href: "/payments", label: "Payments", ready: false, cap: "manageBilling" },
