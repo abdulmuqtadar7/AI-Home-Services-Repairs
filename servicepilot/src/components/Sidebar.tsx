@@ -20,7 +20,7 @@ const NAV: NavItem[] = [
   { href: "/chatbot", label: "AI Chatbot", ready: true, cap: "viewChatbot" },
   { href: "/jobs", label: "Jobs", ready: true, cap: null },
   { href: "/customers", label: "Customers", ready: true, cap: "viewCustomers" },
-  { href: "/calendar", label: "Calendar", ready: false, cap: "viewDashboard" },
+  { href: "/calendar", label: "Calendar", ready: true, cap: "viewDashboard" },
   {
     href: "/technicians",
     label: "Technicians",
