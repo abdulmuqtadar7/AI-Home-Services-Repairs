@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Sidebar } from "@/components/Sidebar";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export default async function AppLayout({
   children,
@@ -81,7 +82,12 @@ export default async function AppLayout({
         actingBusinessId={actingBusinessId}
         businesses={businesses}
       />
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex h-14 items-center justify-end border-b border-slate-200 bg-white px-6">
+          <NotificationBell />
+        </header>
+        <main className="flex-1 overflow-y-auto">{children}</main>
+      </div>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   generateAiReply,
   type ChatTurn,
 } from "@/lib/ai";
+import { createNotification } from "@/lib/notifications";
 
 const bodySchema = z.object({
   businessId: z.string().min(1),
@@ -99,6 +100,19 @@ export async function POST(req: Request) {
   let status = conversation.status;
   if (emergency.isEmergency && status !== "BOOKED") {
     status = "HUMAN_NEEDED";
+    await createNotification({
+      businessId,
+      type: "HUMAN_HANDOFF",
+      title: "Emergency lead needs attention",
+      body:
+        'A web chat visitor mentioned "' +
+        emergency.keyword +
+        '". Flagged for immediate human follow-up.',
+      metadata: {
+        conversationId: conversation.id,
+        keyword: emergency.keyword,
+      },
+    });
     await prisma.message.create({
       data: {
         businessId,
@@ -225,6 +239,28 @@ export async function POST(req: Request) {
         });
         bookedJobId = job.id;
         status = "BOOKED";
+        await createNotification({
+          businessId,
+          type:
+            extraction.urgency === "EMERGENCY" ? "URGENT_LEAD" : "NEW_BOOKING",
+          title:
+            (extraction.urgency === "EMERGENCY"
+              ? "Urgent booking: "
+              : "New booking: ") +
+            (extraction.problemSummary || "Web chat request"),
+          body:
+            (extraction.customerName || "A customer") +
+            " booked via the AI web chat" +
+            (extraction.preferredTime
+              ? " for " + extraction.preferredTime
+              : "") +
+            ".",
+          metadata: {
+            jobId: job.id,
+            conversationId: conversation.id,
+            source: "WEB_CHAT",
+          },
+        });
         await prisma.message.create({
           data: {
             businessId,
