@@ -35,6 +35,12 @@ const NAV: NavItem[] = [
     ready: true,
     cap: "manageSettings",
   },
+  {
+    href: "/website-widget",
+    label: "Website widget",
+    ready: true,
+    cap: "manageSettings",
+  },
 ];
 
 const PLATFORM_NAV: { href: string; label: string; exact: boolean }[] = [
