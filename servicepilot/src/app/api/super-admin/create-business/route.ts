@@ -16,6 +16,13 @@ const NICHES = [
   "OTHER",
 ] as const;
 
+const serviceSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  niche: z.enum(NICHES),
+  basePrice: z.union([z.number(), z.string()]).nullable().optional(),
+  durationMin: z.number().int().positive().max(1440).optional(),
+});
+
 const schema = z.object({
   // Required: account basics.
   businessName: z.string().min(1, "Business name is required").max(200),
@@ -24,6 +31,8 @@ const schema = z.object({
   ownerPassword: z.string().min(8, "Password must be at least 8 characters"),
   // Optional: business profile (option A).
   niche: z.enum(NICHES).optional(),
+  trades: z.array(z.enum(NICHES)).optional(),
+  services: z.array(serviceSchema).optional(),
   phone: z.string().max(40).optional(),
   businessEmail: z.string().max(160).optional(),
   website: z.string().max(300).optional(),
@@ -69,16 +78,50 @@ export async function POST(req: Request) {
   const passwordHash = await hashPassword(d.ownerPassword);
   const trim = (v?: string) => (v && v.trim() ? v.trim() : undefined);
 
+  // Selected trades (deduped). Primary niche is the explicit niche when it is
+  // among the trades, otherwise the first trade, otherwise the explicit niche.
+  const trades = Array.from(new Set(d.trades ?? []));
+  const primary =
+    d.niche && (trades.length === 0 || trades.includes(d.niche))
+      ? d.niche
+      : (trades[0] ?? d.niche);
+
+  // Build service rows: only for selected trades, de-duplicated by niche+name.
+  const serviceRows: {
+    name: string;
+    niche: (typeof NICHES)[number];
+    basePrice: number | null;
+    durationMin: number;
+  }[] = [];
+  const seen = new Set<string>();
+  for (const s of d.services ?? []) {
+    if (trades.length > 0 && !trades.includes(s.niche)) continue;
+    const key = s.niche + "::" + s.name;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const price =
+      s.basePrice === undefined || s.basePrice === null || s.basePrice === ""
+        ? null
+        : Number(s.basePrice);
+    serviceRows.push({
+      name: s.name,
+      niche: s.niche,
+      basePrice: price !== null && Number.isNaN(price) ? null : price,
+      durationMin: s.durationMin ?? 60,
+    });
+  }
+
   // Admin-initiated tenant creation. Mirrors signup but does NOT touch the
   // super admin's own session, so they stay signed in as the platform owner.
   const business = await prisma.$transaction(async (tx) => {
     const owner = await tx.user.create({
       data: { name: d.ownerName, email, passwordHash },
     });
-    return tx.business.create({
+    const created = await tx.business.create({
       data: {
         name: d.businessName,
-        ...(d.niche ? { niche: d.niche } : {}),
+        ...(primary ? { niche: primary } : {}),
+        ...(trades.length > 0 ? { trades } : {}),
         ...(trim(d.phone) ? { phone: trim(d.phone) } : {}),
         ...(trim(d.businessEmail) ? { email: trim(d.businessEmail) } : {}),
         ...(trim(d.website) ? { website: trim(d.website) } : {}),
@@ -104,6 +147,12 @@ export async function POST(req: Request) {
       },
       select: { id: true },
     });
+    if (serviceRows.length > 0) {
+      await tx.service.createMany({
+        data: serviceRows.map((s) => ({ ...s, businessId: created.id })),
+      });
+    }
+    return created;
   });
 
   return NextResponse.json({ ok: true, businessId: business.id });
