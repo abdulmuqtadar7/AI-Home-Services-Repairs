@@ -88,6 +88,7 @@ export const ROUTE_CAPABILITY: ReadonlyArray<{
   { prefix: "/settings", capability: "manageSettings" },
   { prefix: "/services", capability: "manageSettings" },
   { prefix: "/website-widget", capability: "manageSettings" },
+  { prefix: "/reviews", capability: "editJobs" },
   { prefix: "/jobs/new", capability: "createJobs" },
 ];
 
