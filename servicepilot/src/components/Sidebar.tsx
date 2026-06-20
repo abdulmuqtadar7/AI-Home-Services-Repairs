@@ -28,7 +28,7 @@ const NAV: NavItem[] = [
     cap: "manageTechnicians",
   },
   { href: "/payments", label: "Payments", ready: false, cap: "manageBilling" },
-  { href: "/settings", label: "Settings", ready: false, cap: "manageSettings" },
+  { href: "/settings", label: "Settings", ready: true, cap: "manageSettings" },
 ];
 
 const PLATFORM_NAV: { href: string; label: string; exact: boolean }[] = [
