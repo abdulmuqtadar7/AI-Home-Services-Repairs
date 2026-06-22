@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { DigestButton } from "@/components/DigestButton";
 
 export const dynamic = "force-dynamic";
 
@@ -161,12 +162,15 @@ export default async function DashboardPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Welcome back, {user.name.split(" ")[0]}. You have {customers}{" "}
-          customers on file.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Welcome back, {user.name.split(" ")[0]}. You have {customers}{" "}
+            customers on file.
+          </p>
+        </div>
+        <DigestButton />
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
