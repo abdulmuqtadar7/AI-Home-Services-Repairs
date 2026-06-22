@@ -55,19 +55,36 @@ function StatCard({
   label,
   value,
   accent,
+  href,
 }: {
   label: string;
   value: string | number;
   accent?: string;
+  href?: string;
 }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  const inner = (
+    <>
       <p className="text-sm text-slate-500">{label}</p>
       <p
         className={`mt-2 text-3xl font-semibold ${accent ?? "text-slate-900"}`}
       >
         {value}
       </p>
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow"
+      >
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      {inner}
     </div>
   );
 }
@@ -222,21 +239,24 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Open jobs" value={openJobs} />
+        <StatCard label="Open jobs" value={openJobs} href="/jobs?status=open" />
         <StatCard
           label="Emergencies"
           value={emergencies}
           accent={emergencies > 0 ? "text-red-600" : "text-slate-900"}
+          href="/jobs?urgency=EMERGENCY"
         />
         <StatCard
           label="Needs human reply"
           value={needsHuman}
           accent={needsHuman > 0 ? "text-amber-600" : "text-slate-900"}
+          href="/inbox"
         />
         <StatCard
           label="Revenue (paid)"
           value={money(revenue)}
           accent="text-emerald-600"
+          href="/jobs?status=PAID"
         />
       </div>
 
@@ -286,25 +306,42 @@ export default async function DashboardPage() {
         Last 30 days
       </p>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="New leads" value={newLeads30} />
-        <StatCard label="Jobs completed" value={completed30} />
-        <StatCard label="Missed calls recovered" value={missedRecovered30} />
-        <StatCard label="Reviews requested" value={reviewsRequested30} />
+        <StatCard
+          label="New leads"
+          value={newLeads30}
+          href="/jobs?status=NEW_LEAD"
+        />
+        <StatCard
+          label="Jobs completed"
+          value={completed30}
+          href="/jobs?status=COMPLETED"
+        />
+        <StatCard
+          label="Missed calls recovered"
+          value={missedRecovered30}
+          href="/inbox"
+        />
+        <StatCard
+          label="Reviews requested"
+          value={reviewsRequested30}
+          href="/reviews"
+        />
       </div>
 
       <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-900">Pipeline</h2>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {PIPELINE.map((stage) => (
-            <div
+            <Link
               key={stage.key}
-              className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3"
+              href={`/jobs?status=${stage.key}`}
+              className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 transition hover:border-indigo-300 hover:bg-white"
             >
               <p className="text-2xl font-semibold text-slate-900">
                 {statusCounts.get(stage.key) ?? 0}
               </p>
               <p className="mt-0.5 text-xs text-slate-500">{stage.label}</p>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

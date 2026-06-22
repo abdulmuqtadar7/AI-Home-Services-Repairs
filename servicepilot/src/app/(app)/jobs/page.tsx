@@ -5,7 +5,41 @@ import { prisma } from "@/lib/prisma";
 import { can, normalizeRole } from "@/lib/rbac";
 import { JobBoard, type BoardJob } from "@/components/JobBoard";
 
-export default async function JobsPage() {
+export const dynamic = "force-dynamic";
+
+const OPEN_JOB_STATUSES = [
+  "NEW_LEAD",
+  "QUALIFIED",
+  "ESTIMATE_REQUESTED",
+  "BOOKED",
+  "DISPATCHED",
+  "IN_PROGRESS",
+];
+
+const JOB_STATUSES = [
+  "NEW_LEAD",
+  "QUALIFIED",
+  "ESTIMATE_REQUESTED",
+  "BOOKED",
+  "DISPATCHED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "PAID",
+  "REVIEW_REQUESTED",
+  "LOST_CANCELLED",
+];
+
+const URGENCIES = ["EMERGENCY", "HIGH", "NORMAL", "LOW"];
+
+function labelize(s: string) {
+  return s.replace(/_/g, " ").toLowerCase();
+}
+
+export default async function JobsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; urgency?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const businessId = user.session.businessId;
@@ -15,6 +49,10 @@ export default async function JobsPage() {
   const isSuperAdmin = user.isSuperAdmin;
   const isTechnician = !isSuperAdmin && normalizeRole(role) === "TECHNICIAN";
   const canCreate = can(role, "createJobs", { isSuperAdmin });
+
+  const sp = await searchParams;
+  const statusParam = (sp.status ?? "").toUpperCase();
+  const urgencyParam = (sp.urgency ?? "").toUpperCase();
 
   // Technicians only ever see jobs assigned to them.
   let technicianId: string | null = null;
@@ -26,12 +64,30 @@ export default async function JobsPage() {
     technicianId = tech?.id ?? null;
   }
 
+  // Build optional filters from the query string.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: any = {
+    businessId,
+    ...(isTechnician ? { technicianId: technicianId ?? "__none__" } : {}),
+  };
+
+  let filterLabel: string | null = null;
+  if (statusParam === "OPEN") {
+    where.status = { in: OPEN_JOB_STATUSES };
+    filterLabel = "Open jobs";
+  } else if (JOB_STATUSES.includes(statusParam)) {
+    where.status = statusParam;
+    filterLabel = labelize(statusParam);
+  }
+  if (URGENCIES.includes(urgencyParam)) {
+    where.urgency = urgencyParam;
+    filterLabel = filterLabel
+      ? filterLabel + " - " + labelize(urgencyParam)
+      : labelize(urgencyParam) + " urgency";
+  }
+
   const jobs = await prisma.job.findMany({
-    where: {
-      businessId,
-      // When a technician has no linked record yet, "__none__" matches nothing.
-      ...(isTechnician ? { technicianId: technicianId ?? "__none__" } : {}),
-    },
+    where,
     orderBy: { createdAt: "desc" },
     take: 200,
     include: {
@@ -61,8 +117,23 @@ export default async function JobsPage() {
           <p className="mt-1 text-sm text-slate-500">
             {isTechnician
               ? `${jobs.length} job${jobs.length === 1 ? "" : "s"} assigned to you`
-              : `${jobs.length} job${jobs.length === 1 ? "" : "s"} in your pipeline`}
+              : `${jobs.length} job${jobs.length === 1 ? "" : "s"}${
+                  filterLabel ? "" : " in your pipeline"
+                }`}
           </p>
+          {filterLabel && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+                {filterLabel}
+              </span>
+              <Link
+                href="/jobs"
+                className="text-xs font-medium text-slate-500 hover:text-slate-800"
+              >
+                Clear filter
+              </Link>
+            </div>
+          )}
         </div>
         {canCreate && (
           <Link
@@ -76,9 +147,11 @@ export default async function JobsPage() {
       {jobs.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-16 text-center">
           <p className="text-sm text-slate-500">
-            {isTechnician
-              ? "No jobs assigned to you yet."
-              : "No jobs yet. Create your first one to start the pipeline."}
+            {filterLabel
+              ? "No jobs match this filter."
+              : isTechnician
+                ? "No jobs assigned to you yet."
+                : "No jobs yet. Create your first one to start the pipeline."}
           </p>
         </div>
       ) : (
