@@ -111,6 +111,7 @@ enum NotificationType {
   PAYMENT_RECEIVED
   AI_FAILURE
   MISSED_CALL_RECOVERED
+  JOB_DISPATCHED
 }
 
 // ---------- CORE / AUTH ----------
