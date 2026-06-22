@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DigestButton } from "@/components/DigestButton";
+import { scoreLead } from "@/lib/leadScore";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,13 @@ const OPEN_JOB_STATUSES = [
   "BOOKED",
   "DISPATCHED",
   "IN_PROGRESS",
+] as const;
+
+const OPEN_LEAD_STATUSES = [
+  "NEW_LEAD",
+  "QUALIFIED",
+  "ESTIMATE_REQUESTED",
+  "BOOKED",
 ] as const;
 
 const PIPELINE: { key: string; label: string }[] = [
@@ -35,6 +43,12 @@ function money(n: number) {
 function fmtAppt(d: Date) {
   const iso = d.toISOString();
   return iso.slice(0, 10) + " " + iso.slice(11, 16) + " UTC";
+}
+
+function tierBadge(tier: string) {
+  if (tier === "hot") return "bg-red-50 text-red-700";
+  if (tier === "warm") return "bg-amber-50 text-amber-700";
+  return "bg-slate-100 text-slate-600";
 }
 
 function StatCard({
@@ -90,6 +104,7 @@ export default async function DashboardPage() {
     reviewsRequested30,
     upcomingAppointments,
     recentJobs,
+    openLeads,
   ] = await Promise.all([
     prisma.customer.count({ where: { businessId } }),
     prisma.job.count({
@@ -151,6 +166,14 @@ export default async function DashboardPage() {
       take: 6,
       include: { customer: true, technician: true },
     }),
+    prisma.job.findMany({
+      where: { businessId, status: { in: [...OPEN_LEAD_STATUSES] } },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: {
+        customer: { select: { name: true, phone: true, isReturning: true } },
+      },
+    }),
   ]);
 
   const revenue = revenueAgg._sum.amountCharged
@@ -159,6 +182,31 @@ export default async function DashboardPage() {
   const statusCounts = new Map<string, number>(
     statusGroups.map((g) => [g.status, g._count._all]),
   );
+
+  const hotLeads = openLeads
+    .map((job) => {
+      const result = scoreLead(
+        {
+          status: job.status,
+          urgency: job.urgency,
+          createdAt: job.createdAt,
+          customerPhone: job.customer?.phone ?? null,
+          customerReturning: job.customer?.isReturning ?? false,
+          amountCharged: job.amountCharged ? Number(job.amountCharged) : null,
+        },
+        now,
+      );
+      return {
+        id: job.id,
+        title: job.title,
+        customer: job.customer?.name ?? null,
+        score: result.score,
+        tier: result.tier,
+        reasons: result.reasons,
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
 
   return (
     <div className="p-8">
@@ -190,6 +238,48 @@ export default async function DashboardPage() {
           value={money(revenue)}
           accent="text-emerald-600"
         />
+      </div>
+
+      <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <h2 className="text-sm font-semibold text-slate-900">Hot leads</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Ranked by urgency, freshness, and value - chase these first.
+          </p>
+        </div>
+        {hotLeads.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-slate-500">
+            No open leads right now.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {hotLeads.map((lead) => (
+              <li
+                key={lead.id}
+                className="flex items-start justify-between gap-4 px-5 py-3"
+              >
+                <div className="min-w-0">
+                  <Link
+                    href={`/jobs/${lead.id}`}
+                    className="text-sm font-medium text-slate-900 hover:text-indigo-600"
+                  >
+                    {lead.title}
+                  </Link>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {lead.customer ?? "No customer"}
+                    {" - "}
+                    {lead.reasons.slice(0, 3).join(", ")}
+                  </p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${tierBadge(lead.tier)}`}
+                >
+                  {lead.tier} {lead.score}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <p className="mt-8 mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
