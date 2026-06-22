@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type DispatchTechnician = { id: string; name: string };
+
+type TechSuggestion = {
+  id: string;
+  name: string;
+  score: number;
+  skillMatch: boolean;
+  openJobs: number;
+  reasons: string[];
+};
 
 const DISPATCHED_OR_LATER = new Set([
   "DISPATCHED",
@@ -29,8 +38,24 @@ export function DispatchPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<TechSuggestion[]>([]);
 
   const alreadyDispatched = DISPATCHED_OR_LATER.has(status);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/jobs/${jobId}/suggest-tech`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data?.suggestions) {
+          setSuggestions(data.suggestions.slice(0, 3));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [jobId]);
 
   async function dispatch() {
     setLoading(true);
@@ -75,6 +100,47 @@ export function DispatchPanel({
           </span>
         )}
       </div>
+
+      {suggestions.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Suggested techs
+          </p>
+          <ul className="mt-2 space-y-2">
+            {suggestions.map((s) => (
+              <li
+                key={s.id}
+                className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900">
+                    {s.name}
+                    {s.skillMatch && (
+                      <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                        skill match
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {s.reasons.join(", ")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelected(s.id)}
+                  className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium ${
+                    selected === s.id
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                      : "border-slate-300 text-slate-700 hover:bg-white"
+                  }`}
+                >
+                  {selected === s.id ? "Selected" : "Use"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <select
