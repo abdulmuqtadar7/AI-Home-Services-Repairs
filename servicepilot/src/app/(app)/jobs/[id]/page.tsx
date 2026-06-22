@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizeRole } from "@/lib/rbac";
 import { JobForm, type JobInput } from "@/components/JobForm";
+import { DispatchPanel } from "@/components/DispatchPanel";
 import {
   TechnicianJobView,
   type TechJob,
@@ -65,7 +66,7 @@ export default async function JobDetailPage({
             href="/jobs"
             className="text-sm text-slate-500 hover:text-slate-800"
           >
-            ← Back to my jobs
+            &larr; Back to my jobs
           </Link>
           <h1 className="mt-2 text-2xl font-semibold text-slate-900">
             {job.title}
@@ -135,13 +136,19 @@ export default async function JobDetailPage({
           href="/jobs"
           className="text-sm text-slate-500 hover:text-slate-800"
         >
-          ← Back to jobs
+          &larr; Back to jobs
         </Link>
         <h1 className="mt-2 text-2xl font-semibold text-slate-900">
           {job.title}
         </h1>
       </div>
       <div className="max-w-2xl">
+        <DispatchPanel
+          jobId={job.id}
+          status={job.status}
+          technicianId={job.technicianId ?? ""}
+          technicians={technicians.map((t) => ({ id: t.id, name: t.name }))}
+        />
         <JobForm
           initial={initial}
           customers={customers.map((c) => ({
