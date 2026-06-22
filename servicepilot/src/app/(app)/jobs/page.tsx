@@ -16,6 +16,8 @@ const OPEN_JOB_STATUSES = [
   "IN_PROGRESS",
 ];
 
+const DONE_STATUSES = ["COMPLETED", "PAID"];
+
 const JOB_STATUSES = [
   "NEW_LEAD",
   "QUALIFIED",
@@ -38,7 +40,12 @@ function labelize(s: string) {
 export default async function JobsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; urgency?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    urgency?: string;
+    days?: string;
+    dateField?: string;
+  }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -53,6 +60,11 @@ export default async function JobsPage({
   const sp = await searchParams;
   const statusParam = (sp.status ?? "").toUpperCase();
   const urgencyParam = (sp.urgency ?? "").toUpperCase();
+  const days = parseInt(sp.days ?? "", 10);
+  const dateField =
+    (sp.dateField ?? "created").toLowerCase() === "updated"
+      ? "updatedAt"
+      : "createdAt";
 
   // Technicians only ever see jobs assigned to them.
   let technicianId: string | null = null;
@@ -71,20 +83,31 @@ export default async function JobsPage({
     ...(isTechnician ? { technicianId: technicianId ?? "__none__" } : {}),
   };
 
-  let filterLabel: string | null = null;
+  const labelParts: string[] = [];
   if (statusParam === "OPEN") {
     where.status = { in: OPEN_JOB_STATUSES };
-    filterLabel = "Open jobs";
+    labelParts.push("Open jobs");
+  } else if (statusParam === "DONE") {
+    where.status = { in: DONE_STATUSES };
+    labelParts.push("Completed / paid");
   } else if (JOB_STATUSES.includes(statusParam)) {
     where.status = statusParam;
-    filterLabel = labelize(statusParam);
+    labelParts.push(labelize(statusParam));
   }
+
   if (URGENCIES.includes(urgencyParam)) {
     where.urgency = urgencyParam;
-    filterLabel = filterLabel
-      ? filterLabel + " - " + labelize(urgencyParam)
-      : labelize(urgencyParam) + " urgency";
+    labelParts.push(labelize(urgencyParam) + " urgency");
   }
+
+  if (Number.isFinite(days) && days > 0 && days <= 3650) {
+    where[dateField] = {
+      gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000),
+    };
+    labelParts.push("last " + days + " days");
+  }
+
+  const filterLabel = labelParts.length ? labelParts.join(" - ") : null;
 
   const jobs = await prisma.job.findMany({
     where,

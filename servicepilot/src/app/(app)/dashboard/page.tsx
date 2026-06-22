@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DigestButton } from "@/components/DigestButton";
+import { StatCards, type StatCardDef } from "@/components/StatCards";
+import { PipelineTiles } from "@/components/PipelineTiles";
 import { scoreLead } from "@/lib/leadScore";
 
 export const dynamic = "force-dynamic";
@@ -49,44 +51,6 @@ function tierBadge(tier: string) {
   if (tier === "hot") return "bg-red-50 text-red-700";
   if (tier === "warm") return "bg-amber-50 text-amber-700";
   return "bg-slate-100 text-slate-600";
-}
-
-function StatCard({
-  label,
-  value,
-  accent,
-  href,
-}: {
-  label: string;
-  value: string | number;
-  accent?: string;
-  href?: string;
-}) {
-  const inner = (
-    <>
-      <p className="text-sm text-slate-500">{label}</p>
-      <p
-        className={`mt-2 text-3xl font-semibold ${accent ?? "text-slate-900"}`}
-      >
-        {value}
-      </p>
-    </>
-  );
-  if (href) {
-    return (
-      <Link
-        href={href}
-        className="block rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow"
-      >
-        {inner}
-      </Link>
-    );
-  }
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      {inner}
-    </div>
-  );
 }
 
 export default async function DashboardPage() {
@@ -200,6 +164,12 @@ export default async function DashboardPage() {
     statusGroups.map((g) => [g.status, g._count._all]),
   );
 
+  const pipelineStages = PIPELINE.map((s) => ({
+    key: s.key,
+    label: s.label,
+    count: statusCounts.get(s.key) ?? 0,
+  }));
+
   const hotLeads = openLeads
     .map((job) => {
       const result = scoreLead(
@@ -225,6 +195,43 @@ export default async function DashboardPage() {
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
 
+  const primaryCards: StatCardDef[] = [
+    { label: "Open jobs", value: openJobs, query: "status=open" },
+    {
+      label: "Emergencies",
+      value: emergencies,
+      accent: emergencies > 0 ? "text-red-600" : "text-slate-900",
+      query: "status=open&urgency=EMERGENCY",
+    },
+    {
+      label: "Needs human reply",
+      value: needsHuman,
+      accent: needsHuman > 0 ? "text-amber-600" : "text-slate-900",
+      href: "/inbox",
+    },
+    {
+      label: "Revenue (paid)",
+      value: money(revenue),
+      accent: "text-emerald-600",
+      query: "status=done",
+    },
+  ];
+
+  const last30Cards: StatCardDef[] = [
+    { label: "New leads", value: newLeads30, query: "days=30" },
+    {
+      label: "Jobs completed",
+      value: completed30,
+      query: "status=done&days=30&dateField=updated",
+    },
+    {
+      label: "Missed calls recovered",
+      value: missedRecovered30,
+      href: "/inbox",
+    },
+    { label: "Reviews requested", value: reviewsRequested30, href: "/reviews" },
+  ];
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-start justify-between gap-4">
@@ -238,27 +245,7 @@ export default async function DashboardPage() {
         <DigestButton />
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Open jobs" value={openJobs} href="/jobs?status=open" />
-        <StatCard
-          label="Emergencies"
-          value={emergencies}
-          accent={emergencies > 0 ? "text-red-600" : "text-slate-900"}
-          href="/jobs?urgency=EMERGENCY"
-        />
-        <StatCard
-          label="Needs human reply"
-          value={needsHuman}
-          accent={needsHuman > 0 ? "text-amber-600" : "text-slate-900"}
-          href="/inbox"
-        />
-        <StatCard
-          label="Revenue (paid)"
-          value={money(revenue)}
-          accent="text-emerald-600"
-          href="/jobs?status=PAID"
-        />
-      </div>
+      <StatCards cards={primaryCards} />
 
       <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 py-4">
@@ -305,45 +292,11 @@ export default async function DashboardPage() {
       <p className="mt-8 mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
         Last 30 days
       </p>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          label="New leads"
-          value={newLeads30}
-          href="/jobs?status=NEW_LEAD"
-        />
-        <StatCard
-          label="Jobs completed"
-          value={completed30}
-          href="/jobs?status=COMPLETED"
-        />
-        <StatCard
-          label="Missed calls recovered"
-          value={missedRecovered30}
-          href="/inbox"
-        />
-        <StatCard
-          label="Reviews requested"
-          value={reviewsRequested30}
-          href="/reviews"
-        />
-      </div>
+      <StatCards cards={last30Cards} />
 
       <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-900">Pipeline</h2>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {PIPELINE.map((stage) => (
-            <Link
-              key={stage.key}
-              href={`/jobs?status=${stage.key}`}
-              className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 transition hover:border-indigo-300 hover:bg-white"
-            >
-              <p className="text-2xl font-semibold text-slate-900">
-                {statusCounts.get(stage.key) ?? 0}
-              </p>
-              <p className="mt-0.5 text-xs text-slate-500">{stage.label}</p>
-            </Link>
-          ))}
-        </div>
+        <PipelineTiles stages={pipelineStages} />
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
