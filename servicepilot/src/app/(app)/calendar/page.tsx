@@ -2,15 +2,17 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
-import { CalendarView, type CalJob } from "@/components/CalendarView";
+import {
+  CalendarView,
+  type CalTechnician,
+  type CalJobOption,
+} from "@/components/CalendarView";
 
 export const dynamic = "force-dynamic";
 
-function monthRange(month: string) {
-  const [y, m] = month.split("-").map(Number);
-  const start = new Date(Date.UTC(y, m - 1, 1));
-  const end = new Date(Date.UTC(y, m, 1));
-  return { start, end };
+function fallbackMonth() {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 export default async function CalendarPage({
@@ -27,32 +29,49 @@ export default async function CalendarPage({
   if (!can(role, "viewDashboard", { isSuperAdmin: user.isSuperAdmin })) {
     redirect("/jobs");
   }
+  const canManage = can(role, "editJobs", { isSuperAdmin: user.isSuperAdmin });
 
   const sp = await searchParams;
-  const now = new Date();
-  const fallback = `${now.getUTCFullYear()}-${String(
-    now.getUTCMonth() + 1,
-  ).padStart(2, "0")}`;
-  const month = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : fallback;
-  const { start, end } = monthRange(month);
+  const month = /^\d{4}-\d{2}$/.test(sp.month ?? "")
+    ? sp.month!
+    : fallbackMonth();
 
-  const jobs = await prisma.job.findMany({
-    where: { businessId, scheduledAt: { gte: start, lt: end } },
-    orderBy: { scheduledAt: "asc" },
-    include: {
-      customer: { select: { name: true } },
-      technician: { select: { name: true } },
-    },
-  });
+  // Technicians power the create form + the calendar filter. Open jobs can be
+  // linked to an appointment so the customer is derived automatically.
+  const [technicians, jobs] = await Promise.all([
+    prisma.technician.findMany({
+      where: { businessId, active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.job.findMany({
+      where: { businessId, status: { notIn: ["LOST_CANCELLED", "PAID"] } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        title: true,
+        customer: { select: { name: true } },
+      },
+    }),
+  ]);
 
-  const calJobs: CalJob[] = jobs.map((j) => ({
+  const techRows: CalTechnician[] = technicians.map((t) => ({
+    id: t.id,
+    name: t.name,
+  }));
+  const jobRows: CalJobOption[] = jobs.map((j) => ({
     id: j.id,
     title: j.title,
-    status: j.status,
-    scheduledAt: j.scheduledAt!.toISOString(),
     customer: j.customer?.name ?? null,
-    technician: j.technician?.name ?? null,
   }));
 
-  return <CalendarView month={month} jobs={calJobs} />;
+  return (
+    <CalendarView
+      month={month}
+      technicians={techRows}
+      jobs={jobRows}
+      canManage={canManage}
+    />
+  );
 }
