@@ -7,6 +7,7 @@ import {
   type CalTechnician,
   type CalJobOption,
 } from "@/components/CalendarView";
+import { RemindersButton } from "@/components/RemindersButton";
 
 export const dynamic = "force-dynamic";
 
@@ -67,11 +68,21 @@ export default async function CalendarPage({
   }));
 
   return (
-    <CalendarView
-      month={month}
-      technicians={techRows}
-      jobs={jobRows}
-      canManage={canManage}
-    />
+    <div>
+      {canManage && (
+        <div className="flex items-center justify-end gap-3 px-8 pt-6">
+          <span className="text-xs text-slate-500">
+            Text customers a reminder for appointments in the next 24h
+          </span>
+          <RemindersButton withinHours={24} />
+        </div>
+      )}
+      <CalendarView
+        month={month}
+        technicians={techRows}
+        jobs={jobRows}
+        canManage={canManage}
+      />
+    </div>
   );
 }
