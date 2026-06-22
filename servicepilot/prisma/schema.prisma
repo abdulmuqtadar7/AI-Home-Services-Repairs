@@ -133,6 +133,7 @@ model User {
 }
 
 model Business {
+  reviews             Review[]
   id                  String         @id @default(cuid())
   name                String
   niche               ServiceNiche   @default(GENERAL_REPAIR)
@@ -184,6 +185,7 @@ model BusinessMember {
 // ---------- CRM / OPERATIONS ----------
 
 model Customer {
+  reviews     Review[]
   id          String       @id @default(cuid())
   businessId  String
   name        String?
@@ -280,6 +282,7 @@ model Technician {
 }
 
 model Job {
+  reviews           Review[]
   id                String       @id @default(cuid())
   businessId        String
   customerId        String?
@@ -462,4 +465,27 @@ enum BusinessStatus {
   ACTIVE
   SUSPENDED
   PENDING
+}
+
+model Review {
+  id             String    @id @default(cuid())
+  businessId     String
+  business       Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  jobId          String?
+  job            Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  rating         Int
+  comment        String?
+  source         String    @default("PUBLIC_FORM")
+  routedToGoogle Boolean   @default(false)
+  sentiment      String?
+  themes         String[]
+  analyzedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([businessId])
+  @@index([jobId])
+  @@index([customerId])
 }
