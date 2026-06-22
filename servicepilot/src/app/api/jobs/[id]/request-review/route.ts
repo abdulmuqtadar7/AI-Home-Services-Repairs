@@ -53,14 +53,16 @@ export async function POST(
   const customerName = job.customer?.name ? " " + job.customer.name : "";
   const reviewLink = business?.googleReviewLink || null;
   const bizName = business?.name || "our team";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+  const feedbackLink = appUrl ? appUrl + "/feedback/" + id : null;
 
-  const message = reviewLink
+  const message = feedbackLink
     ? "Hi" +
       customerName +
       ", thanks for choosing " +
       bizName +
-      "! If you have a moment, we'd love a quick review: " +
-      reviewLink
+      "! How did we do? Leave a quick rating here: " +
+      feedbackLink
     : "Hi" +
       customerName +
       ", thanks for choosing " +
