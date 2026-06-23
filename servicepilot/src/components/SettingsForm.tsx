@@ -1,3 +1,4 @@
+// src/components/SettingsForm.tsx
 "use client";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -50,6 +51,12 @@ type Initial = {
     collectPhotos: boolean;
     emergencyKeywords: string[];
   };
+  integration?: {
+    twilioAccountSid: string;
+    twilioAuthTokenMasked: string;
+    twilioAuthTokenSet: boolean;
+    twilioPhoneNumber: string;
+  } | null;
 };
 
 const inputCls =
@@ -90,6 +97,23 @@ export function SettingsForm({ initial }: { initial: Initial }) {
     initial.ai.emergencyKeywords.join(", "),
   );
 
+  // Twilio integration state. authToken is intentionally left blank on load —
+  // the server returns a masked preview, never the plaintext. An empty field
+  // on save means "no change"; a non-empty field means "update".
+  const [twilioAccountSid, setTwilioAccountSid] = useState(
+    initial.integration?.twilioAccountSid || "",
+  );
+  const [twilioAuthToken, setTwilioAuthToken] = useState("");
+  const [twilioPhoneNumber, setTwilioPhoneNumber] = useState(
+    initial.integration?.twilioPhoneNumber || "",
+  );
+  const [twilioAuthTokenSet, setTwilioAuthTokenSet] = useState(
+    initial.integration?.twilioAuthTokenSet || false,
+  );
+  const [twilioAuthTokenMasked, setTwilioAuthTokenMasked] = useState(
+    initial.integration?.twilioAuthTokenMasked || "",
+  );
+
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(
     null,
@@ -110,29 +134,38 @@ export function SettingsForm({ initial }: { initial: Initial }) {
     }
     const primaryNiche = trades.includes(primary) ? primary : trades[0];
     setSaving(true);
+
+    // Only send twilioAuthToken if the user typed something. Empty = no change.
+    const body: Record<string, unknown> = {
+      trades,
+      niche: primaryNiche,
+      phone,
+      email,
+      website,
+      diagnosticFee: diagnosticFee === "" ? null : diagnosticFee,
+      emergencyAvailable,
+      googleReviewLink,
+      personaName,
+      tone,
+      greeting,
+      systemPromptOverride,
+      bookingEnabled,
+      collectPhotos,
+      emergencyKeywords: emergencyKeywords
+        .split(",")
+        .map((k) => k.trim())
+        .filter(Boolean),
+      twilioAccountSid,
+      twilioPhoneNumber,
+    };
+    if (twilioAuthToken !== "") {
+      body.twilioAuthToken = twilioAuthToken;
+    }
+
     const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        trades,
-        niche: primaryNiche,
-        phone,
-        email,
-        website,
-        diagnosticFee: diagnosticFee === "" ? null : diagnosticFee,
-        emergencyAvailable,
-        googleReviewLink,
-        personaName,
-        tone,
-        greeting,
-        systemPromptOverride,
-        bookingEnabled,
-        collectPhotos,
-        emergencyKeywords: emergencyKeywords
-          .split(",")
-          .map((k) => k.trim())
-          .filter(Boolean),
-      }),
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     setSaving(false);
@@ -140,6 +173,23 @@ export function SettingsForm({ initial }: { initial: Initial }) {
       setMsg({ type: "err", text: data.error || "Could not save settings." });
       return;
     }
+
+    // After save, refresh the masked token preview and clear the plaintext
+    // input so the user has to retype to change it again.
+    if (twilioAuthToken !== "") {
+      setTwilioAuthTokenSet(true);
+      // The new masked preview isn't returned by PATCH; refetch GET to get it.
+      try {
+        const r = await fetch("/api/settings");
+        const j = await r.json();
+        if (j?.integration?.twilioAuthTokenMasked) {
+          setTwilioAuthTokenMasked(j.integration.twilioAuthTokenMasked);
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+    setTwilioAuthToken("");
     setMsg({ type: "ok", text: "Settings saved." });
     router.refresh();
   }
@@ -197,9 +247,32 @@ export function SettingsForm({ initial }: { initial: Initial }) {
               placeholder="Leave blank to use the smart default prompt."
             />
             <p className="mt-1 text-xs text-slate-400">
-              Replaces the auto-generated instructions. Leave blank unless you
-              know what you&apos;re doing.
+              If set, replaces the auto-generated prompt entirely. Use with care.
             </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelCls}>Booking enabled</label>
+              <select
+                className={inputCls}
+                value={bookingEnabled ? "yes" : "no"}
+                onChange={(e) => setBookingEnabled(e.target.value === "yes")}
+              >
+                <option value="yes">Yes — AI can book visits</option>
+                <option value="no">No — AI only qualifies leads</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Collect job photos</label>
+              <select
+                className={inputCls}
+                value={collectPhotos ? "yes" : "no"}
+                onChange={(e) => setCollectPhotos(e.target.value === "yes")}
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
           </div>
           <div>
             <label className={labelCls}>Emergency keywords</label>
@@ -207,67 +280,13 @@ export function SettingsForm({ initial }: { initial: Initial }) {
               className={inputCls}
               value={emergencyKeywords}
               onChange={(e) => setEmergencyKeywords(e.target.value)}
-              placeholder="flood, gas leak, no heat, burst pipe"
+              placeholder="burst, flood, gas leak, no heat"
             />
             <p className="mt-1 text-xs text-slate-400">
-              Comma-separated. Messages containing these are flagged urgent.
+              Comma-separated. When a customer mentions these, the lead is
+              flagged for immediate human follow-up.
             </p>
           </div>
-          <div className="flex flex-col gap-2">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={bookingEnabled}
-                onChange={(e) => setBookingEnabled(e.target.checked)}
-              />
-              Let the AI book appointments
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={collectPhotos}
-                onChange={(e) => setCollectPhotos(e.target.checked)}
-              />
-              Ask customers for photos of the problem
-            </label>
-          </div>
-        </div>
-      </section>
-
-      <section className={cardCls}>
-        <h2 className="text-lg font-semibold text-slate-900">Trades</h2>
-        <p className="mb-4 text-sm text-slate-500">
-          The services your business offers. This scopes what the AI will talk
-          about.
-        </p>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {NICHES.map((n) => (
-            <label
-              key={n}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-            >
-              <input
-                type="checkbox"
-                checked={trades.includes(n)}
-                onChange={() => toggleTrade(n)}
-              />
-              {NICHE_LABELS[n]}
-            </label>
-          ))}
-        </div>
-        <div className="mt-4 max-w-xs">
-          <label className={labelCls}>Primary trade</label>
-          <select
-            className={inputCls}
-            value={primary}
-            onChange={(e) => setPrimary(e.target.value as Niche)}
-          >
-            {(trades.length ? trades : [...NICHES]).map((n) => (
-              <option key={n} value={n}>
-                {NICHE_LABELS[n]}
-              </option>
-            ))}
-          </select>
         </div>
       </section>
 
@@ -276,9 +295,42 @@ export function SettingsForm({ initial }: { initial: Initial }) {
           Business profile
         </h2>
         <p className="mb-4 text-sm text-slate-500">
-          Contact details and policies shown to customers.
+          Trade categories, contact details, and pricing defaults.
         </p>
         <div className="space-y-4">
+          <div>
+            <label className={labelCls}>Trades you work in</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {NICHES.map((n) => (
+                <label
+                  key={n}
+                  className="flex items-center gap-2 text-sm text-slate-700"
+                >
+                  <input
+                    type="checkbox"
+                    checked={trades.includes(n)}
+                    onChange={() => toggleTrade(n)}
+                    className="rounded border-slate-300"
+                  />
+                  {NICHE_LABELS[n]}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Primary trade</label>
+            <select
+              className={inputCls}
+              value={primary}
+              onChange={(e) => setPrimary(e.target.value as Niche)}
+            >
+              {trades.map((n) => (
+                <option key={n} value={n}>
+                  {NICHE_LABELS[n]}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Phone</label>
@@ -286,7 +338,7 @@ export function SettingsForm({ initial }: { initial: Initial }) {
                 className={inputCls}
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="(555) 123-4567"
+                placeholder="+1 555 0100"
               />
             </div>
             <div>
@@ -295,31 +347,41 @@ export function SettingsForm({ initial }: { initial: Initial }) {
                 className={inputCls}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="hello@business.com"
+                placeholder="hello@example.com"
               />
             </div>
           </div>
+          <div>
+            <label className={labelCls}>Website</label>
+            <input
+              className={inputCls}
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="https://"
+            />
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className={labelCls}>Website</label>
+              <label className={labelCls}>Diagnostic fee ($)</label>
               <input
                 className={inputCls}
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-                placeholder="https://..."
+                value={diagnosticFee}
+                onChange={(e) => setDiagnosticFee(e.target.value)}
+                placeholder="89"
               />
             </div>
             <div>
-              <label className={labelCls}>Diagnostic / call-out fee ($)</label>
-              <input
+              <label className={labelCls}>Emergency service</label>
+              <select
                 className={inputCls}
-                type="number"
-                min="0"
-                step="0.01"
-                value={diagnosticFee}
-                onChange={(e) => setDiagnosticFee(e.target.value)}
-                placeholder="0.00"
-              />
+                value={emergencyAvailable ? "yes" : "no"}
+                onChange={(e) =>
+                  setEmergencyAvailable(e.target.value === "yes")
+                }
+              >
+                <option value="yes">Yes — available 24/7</option>
+                <option value="no">No</option>
+              </select>
             </div>
           </div>
           <div>
@@ -328,39 +390,87 @@ export function SettingsForm({ initial }: { initial: Initial }) {
               className={inputCls}
               value={googleReviewLink}
               onChange={(e) => setGoogleReviewLink(e.target.value)}
-              placeholder="https://g.page/r/..."
+              placeholder="https://g.page/your-business/review"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={emergencyAvailable}
-              onChange={(e) => setEmergencyAvailable(e.target.checked)}
-            />
-            We offer 24/7 emergency service
-          </label>
         </div>
       </section>
 
-      <div className="flex items-center gap-3">
+      <section className={cardCls}>
+        <h2 className="text-lg font-semibold text-slate-900">
+          Twilio integration
+        </h2>
+        <p className="mb-4 text-sm text-slate-500">
+          Bring your own Twilio account for SMS and voice. The auth token is
+          encrypted at rest and never sent back to the browser after saving.
+          Leave blank to use the platform default (if configured).
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className={labelCls}>Twilio Account SID</label>
+            <input
+              className={inputCls}
+              value={twilioAccountSid}
+              onChange={(e) => setTwilioAccountSid(e.target.value)}
+              placeholder="AC..."
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Twilio Auth Token</label>
+            <input
+              className={inputCls}
+              type="password"
+              value={twilioAuthToken}
+              onChange={(e) => setTwilioAuthToken(e.target.value)}
+              placeholder={
+                twilioAuthTokenSet
+                  ? `Currently set (${twilioAuthTokenMasked}). Type a new value to replace.`
+                  : "Enter auth token to set"
+              }
+              autoComplete="off"
+            />
+            {twilioAuthTokenSet && twilioAuthToken === "" && (
+              <p className="mt-1 text-xs text-slate-400">
+                A token is currently saved ({twilioAuthTokenMasked}). Leave this
+                field blank to keep it unchanged.
+              </p>
+            )}
+          </div>
+          <div>
+            <label className={labelCls}>Twilio Phone Number</label>
+            <input
+              className={inputCls}
+              value={twilioPhoneNumber}
+              onChange={(e) => setTwilioPhoneNumber(e.target.value)}
+              placeholder="+1 555 0100"
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              Must be a Twilio-owned number capable of SMS and voice.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {msg && (
+        <div
+          className={
+            msg.type === "ok"
+              ? "rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
+              : "rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700"
+          }
+        >
+          {msg.text}
+        </div>
+      )}
+
+      <div className="flex justify-end">
         <button
           type="submit"
           disabled={saving}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
+          className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
         >
-          {saving ? "Saving\u2026" : "Save changes"}
+          {saving ? "Saving..." : "Save settings"}
         </button>
-        {msg && (
-          <span
-            className={
-              msg.type === "ok"
-                ? "text-sm text-green-600"
-                : "text-sm text-red-600"
-            }
-          >
-            {msg.text}
-          </span>
-        )}
       </div>
     </form>
   );

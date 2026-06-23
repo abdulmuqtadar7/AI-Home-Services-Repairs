@@ -1,8 +1,14 @@
+// src/app/api/settings/route.ts
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getApiContext } from "@/lib/api-context";
 import { can } from "@/lib/rbac";
+import {
+  getIntegrationSetting,
+  updateIntegrationSetting,
+} from "@/lib/integrations";
+import { maskSecret } from "@/lib/crypto";
 
 const NICHES = [
   "PLUMBING",
@@ -40,6 +46,11 @@ const schema = z.object({
   bookingEnabled: z.boolean().optional(),
   collectPhotos: z.boolean().optional(),
   emergencyKeywords: z.array(z.string().trim()).optional(),
+  // Twilio integration (per-tenant; auth token encrypted at rest)
+  twilioAccountSid: z.string().trim().max(60).optional().or(z.literal("")),
+  // Auth token: empty/undefined = no change; non-empty = update.
+  twilioAuthToken: z.string().trim().max(200).optional().or(z.literal("")),
+  twilioPhoneNumber: z.string().trim().max(30).optional().or(z.literal("")),
 });
 
 function canManage(ctx: {
@@ -68,6 +79,8 @@ export async function GET() {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
   }
 
+  const integration = await getIntegrationSetting(ctx.businessId);
+
   return NextResponse.json({
     business: {
       name: business.name,
@@ -93,6 +106,21 @@ export async function GET() {
           emergencyKeywords: business.aiSetting.emergencyKeywords,
         }
       : null,
+    integration: integration
+      ? {
+          twilioAccountSid: integration.twilioAccountSid || "",
+          // Never expose the auth token plaintext. Return a masked preview
+          // so the UI can show whether one is set without leaking it.
+          twilioAuthTokenMasked: maskSecret(integration.twilioAuthToken),
+          twilioAuthTokenSet: Boolean(integration.twilioAuthToken),
+          twilioPhoneNumber: integration.twilioPhoneNumber || "",
+        }
+      : {
+          twilioAccountSid: "",
+          twilioAuthTokenMasked: "",
+          twilioAuthTokenSet: false,
+          twilioPhoneNumber: "",
+        },
   });
 }
 
@@ -175,6 +203,26 @@ export async function PATCH(req: Request) {
       },
     });
   });
+
+  // Twilio integration update (outside the tx — separate table, encrypted).
+  // Only update fields the client actually sent. Auth token: empty = no change.
+  const integrationPatch: {
+    twilioAccountSid?: string | null;
+    twilioAuthToken?: string | null;
+    twilioPhoneNumber?: string | null;
+  } = {};
+  if (d.twilioAccountSid !== undefined) {
+    integrationPatch.twilioAccountSid = d.twilioAccountSid || null;
+  }
+  if (d.twilioPhoneNumber !== undefined) {
+    integrationPatch.twilioPhoneNumber = d.twilioPhoneNumber || null;
+  }
+  if (d.twilioAuthToken !== undefined && d.twilioAuthToken !== "") {
+    integrationPatch.twilioAuthToken = d.twilioAuthToken;
+  }
+  if (Object.keys(integrationPatch).length > 0) {
+    await updateIntegrationSetting(businessId, integrationPatch);
+  }
 
   return NextResponse.json({ ok: true });
 }
