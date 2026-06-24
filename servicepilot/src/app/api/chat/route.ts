@@ -9,6 +9,8 @@ import {
   type ChatTurn,
 } from "@/lib/ai";
 import { createNotification } from "@/lib/notifications";
+import { rateLimit } from "@/lib/rateLimit";
+import { getRequestIp } from "@/lib/request-ip";
 
 const bodySchema = z.object({
   businessId: z.string().min(1),
@@ -30,6 +32,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
   const { businessId, sessionId, message, contact } = parsed.data;
+
+  const rl = rateLimit({
+    key: "chat:" + businessId + ":" + getRequestIp(req),
+    limit: 30,
+    windowMs: 60000,
+  });
+  if (rl.ok === false) {
+    return NextResponse.json(
+      { error: "Too many requests. Please slow down." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
+  }
 
   const business = await prisma.business.findUnique({
     where: { id: businessId },

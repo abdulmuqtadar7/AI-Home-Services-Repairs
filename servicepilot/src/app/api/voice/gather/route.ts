@@ -8,6 +8,8 @@ import {
   type ChatTurn,
 } from "@/lib/ai";
 import { createNotification } from "@/lib/notifications";
+import { rateLimit } from "@/lib/rateLimit";
+import { getRequestIp } from "@/lib/request-ip";
 import { gatherTwiml, sayHangupTwiml, sayThenGatherTwiml } from "@/lib/twilio";
 
 export const runtime = "nodejs";
@@ -34,6 +36,26 @@ export async function POST(req: Request) {
   const speech = ((form?.get("SpeechResult") as string) || "").trim();
   const callSid = (form?.get("CallSid") as string) || "";
   const from = (form?.get("From") as string) || "";
+
+  const rl = rateLimit({
+    key: "voice-gather:" + (callSid || getRequestIp(req)),
+    limit: 10,
+    windowMs: 60000,
+  });
+  if (rl.ok === false) {
+    return new NextResponse(
+      sayHangupTwiml(
+        "We are receiving a lot of calls right now. Please try again in a moment. Goodbye.",
+      ),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Retry-After": String(rl.retryAfter),
+        },
+      },
+    );
+  }
 
   const business = businessId
     ? await prisma.business.findUnique({ where: { id: businessId } })
