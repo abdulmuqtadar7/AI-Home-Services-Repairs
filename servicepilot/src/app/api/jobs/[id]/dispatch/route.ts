@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getApiContext } from "@/lib/api-context";
 import { can } from "@/lib/rbac";
-import { isTwilioConfigured, sendSms } from "@/lib/twilio";
+import { isTwilioConfiguredForBusiness, sendSms } from "@/lib/twilio";
 import { createNotification } from "@/lib/notifications";
 
 export const runtime = "nodejs";
@@ -84,8 +84,8 @@ export async function POST(
   const message =
     "New job assigned: " + job.title + forCustomer + atAddress + ".";
   let smsSent = false;
-  if (technician.phone && isTwilioConfigured()) {
-    smsSent = await sendSms(technician.phone, message);
+  if (technician.phone && (await isTwilioConfiguredForBusiness(businessId))) {
+    smsSent = await sendSms(technician.phone, message, { businessId });
   }
 
   await createNotification({

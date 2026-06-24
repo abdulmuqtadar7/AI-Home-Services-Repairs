@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
-import { isTwilioConfigured, sendSms } from "@/lib/twilio";
+import { isTwilioConfiguredForBusiness, sendSms } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,7 +84,9 @@ export async function POST(req: Request) {
     business.name +
     ". Sorry we missed your call. Call us back anytime and our 24/7 assistant will help you book a visit.";
 
-  const smsSent = isTwilioConfigured() ? await sendSms(from, message) : false;
+  const smsSent = (await isTwilioConfiguredForBusiness(businessId))
+    ? await sendSms(from, message, { businessId })
+    : false;
 
   await createNotification({
     businessId,

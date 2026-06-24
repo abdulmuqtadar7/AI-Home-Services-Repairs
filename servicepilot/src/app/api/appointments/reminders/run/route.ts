@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getApiContext } from "@/lib/api-context";
 import { can } from "@/lib/rbac";
-import { isTwilioConfigured, sendSms } from "@/lib/twilio";
+import { isTwilioConfiguredForBusiness, sendSms } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
     select: { name: true },
   });
   const bizName = business?.name ?? "our team";
-  const twilioReady = isTwilioConfigured();
+  const twilioReady = await isTwilioConfiguredForBusiness(businessId);
 
   let sent = 0;
   let skipped = 0;
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
       formatWhen(appt.startAt) +
       ". Reply here if you need to reschedule.";
 
-    const ok = await sendSms(phone, message);
+    const ok = await sendSms(phone, message, { businessId });
     if (ok) {
       await prisma.appointment.update({
         where: { id: appt.id },

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getApiContext } from "@/lib/api-context";
 import { can } from "@/lib/rbac";
-import { isTwilioConfigured, sendSms } from "@/lib/twilio";
+import { isTwilioConfiguredForBusiness, sendSms } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,8 +70,8 @@ export async function POST(
       "! We'd really appreciate your feedback on the service you received.";
 
   let smsSent = false;
-  if (phone && isTwilioConfigured()) {
-    smsSent = await sendSms(phone, message);
+  if (phone && (await isTwilioConfiguredForBusiness(businessId))) {
+    smsSent = await sendSms(phone, message, { businessId });
   }
 
   const updated = await prisma.job.update({

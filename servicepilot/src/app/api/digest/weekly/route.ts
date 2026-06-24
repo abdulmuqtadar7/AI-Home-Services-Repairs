@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getApiContext } from "@/lib/api-context";
 import { can } from "@/lib/rbac";
-import { isTwilioConfigured, sendSms } from "@/lib/twilio";
+import { isTwilioConfiguredForBusiness, sendSms } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -125,8 +125,12 @@ export async function POST(req: Request) {
     " appointments in the next 7 days.";
 
   let sent = false;
-  if (wantSms && business?.phone && isTwilioConfigured()) {
-    sent = await sendSms(business.phone, text);
+  if (
+    wantSms &&
+    business?.phone &&
+    (await isTwilioConfiguredForBusiness(businessId))
+  ) {
+    sent = await sendSms(business.phone, text, { businessId });
   }
 
   return NextResponse.json({ ok: true, summary, text, sent });
