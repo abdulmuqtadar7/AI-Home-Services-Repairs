@@ -31,6 +31,26 @@ async function handle(req: Request): Promise<NextResponse> {
     );
   }
 
+  const form = await req.formData().catch(() => null);
+  const callSid = (form?.get("CallSid") as string) || "";
+  if (callSid) {
+    const existing = await prisma.conversation.findFirst({
+      where: {
+        businessId,
+        channel: "VOICE",
+        externalRef: callSid,
+        status: { in: ["BOOKED", "HUMAN_NEEDED"] },
+      },
+    });
+    if (existing) {
+      return xml(
+        sayHangupTwiml(
+          "Thanks for calling back. Our team already has your request and will reach out to you shortly. Goodbye.",
+        ),
+      );
+    }
+  }
+
   const greeting =
     "Thank you for calling " +
     business.name +

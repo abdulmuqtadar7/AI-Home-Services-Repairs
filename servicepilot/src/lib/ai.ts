@@ -138,6 +138,24 @@ export function buildSystemPrompt(
   return lines.filter(Boolean).join("\n");
 }
 
+export function buildVoicePrompt(
+  business: BusinessLike,
+  ai: AiSettingLike,
+  services: PromptService[] = [],
+) {
+  const base = buildSystemPrompt(business, ai, services);
+  const nl = String.fromCharCode(10);
+  const voiceLines = [
+    "This conversation is happening over a live phone call, and your reply will be read aloud by a text to speech voice.",
+    "Keep every reply to at most two short sentences.",
+    "Ask only one question per turn.",
+    "Do not use URLs, links, email addresses, markdown, bullet points, or any special formatting.",
+    "Speak in plain, natural spoken language, since the caller cannot see any text.",
+    "Confirm key details like phone number and address by reading them back to the caller.",
+  ];
+  return base + nl + nl + voiceLines.join(" ");
+}
+
 export async function generateAiReply(args: {
   systemPrompt: string;
   history: ChatTurn[];

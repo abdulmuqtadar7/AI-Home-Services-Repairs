@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
-  buildSystemPrompt,
+  buildVoicePrompt,
   detectEmergency,
   extractBooking,
   generateAiReply,
@@ -43,6 +43,27 @@ export async function POST(req: Request) {
       sayHangupTwiml(
         "Sorry, this phone assistant is not available right now. Goodbye.",
       ),
+    );
+  }
+
+  const miss = parseInt(searchParams.get("miss") || "0", 10) || 0;
+  const confidence = parseFloat((form?.get("Confidence") as string) || "");
+  const lowConfidence = Number.isFinite(confidence) && confidence < 0.3;
+  const missed = speech.length === 0 || callSid.length === 0 || lowConfidence;
+  if (missed) {
+    if (miss >= 1) {
+      return xml(
+        sayHangupTwiml(
+          "I am still having trouble hearing you. I will have a team member follow up with you shortly. Goodbye.",
+        ),
+      );
+    }
+    return xml(
+      gatherTwiml({
+        prompt:
+          "Sorry, I did not catch that. Please tell me how I can help in a few words.",
+        action: action + "&miss=1",
+      }),
     );
   }
 
@@ -146,6 +167,24 @@ export async function POST(req: Request) {
     );
   }
 
+  if (emergency.isEmergency) {
+    const reassure =
+      "I understand this may be an emergency. I am alerting our team right now. Please stay on the line, and if anyone is in danger, hang up and call your local emergency number.";
+    await prisma.message.create({
+      data: {
+        businessId,
+        conversationId: conversation.id,
+        sender: "AI",
+        content: reassure,
+      },
+    });
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date(), status },
+    });
+    return xml(sayHangupTwiml(reassure));
+  }
+
   const recent = await prisma.message.findMany({
     where: { conversationId: conversation.id },
     orderBy: { createdAt: "asc" },
@@ -159,8 +198,8 @@ export async function POST(req: Request) {
     }));
 
   const systemPrompt =
-    buildSystemPrompt(business, aiSetting, promptServices) +
-    "\nThis conversation is happening over a phone call, so keep replies short, clear, and easy to understand out loud. Ask one question at a time." +
+    buildVoicePrompt(business, aiSetting, promptServices) +
+    "\n" +
     (emergency.isEmergency
       ? "\nIMPORTANT: The caller's last message may describe an emergency. Respond with urgency and reassurance, and tell them a team member is being alerted now."
       : "");
@@ -288,6 +327,31 @@ export async function POST(req: Request) {
         : {}),
     },
   });
+
+  if (booked === false && userTurns >= 4) {
+    const handoff =
+      "Thank you for your patience. Let me have a team member call you back shortly to finish helping you. Goodbye.";
+    await prisma.message.create({
+      data: {
+        businessId,
+        conversationId: conversation.id,
+        sender: "AI",
+        content: handoff,
+      },
+    });
+    await createNotification({
+      businessId,
+      type: "HUMAN_HANDOFF",
+      title: "Phone call needs a callback",
+      body: "An AI phone call reached the turn limit without booking. Flagged for a manual callback.",
+      metadata: { conversationId: conversation.id, source: "VOICE_CALL" },
+    });
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date(), status: "HUMAN_NEEDED" },
+    });
+    return xml(sayHangupTwiml(handoff));
+  }
 
   const prompt = booked
     ? "Is there anything else I can help you with?"
