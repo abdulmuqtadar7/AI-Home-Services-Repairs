@@ -7,6 +7,23 @@
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
 
+// Fields whose values are secrets and must be encrypted at rest.
+// stripeAccountId is excluded: it is an account identifier, not a secret.
+const ENCRYPTED_FIELDS = [
+  "twilioAuthToken",
+  "googleMapsApiKey",
+  "zapierWebhookUrl",
+] as const;
+
+function decryptRow<T extends Record<string, unknown>>(row: T): T {
+  const out: Record<string, unknown> = { ...row };
+  for (const f of ENCRYPTED_FIELDS) {
+    const v = out[f];
+    if (typeof v === "string" && v.length > 0) out[f] = decrypt(v);
+  }
+  return out as T;
+}
+
 // Shape returned to callers — twilioAuthToken is decrypted plaintext.
 export type DecryptedIntegrationSetting = {
   id: string;
@@ -43,10 +60,7 @@ export async function getIntegrationSetting(
     where: { businessId },
   });
   if (!row) return null;
-  return {
-    ...row,
-    twilioAuthToken: row.twilioAuthToken ? decrypt(row.twilioAuthToken) : null,
-  };
+  return decryptRow(row);
 }
 
 export async function updateIntegrationSetting(
@@ -56,8 +70,12 @@ export async function updateIntegrationSetting(
   // Build the persistence payload. Encrypt the auth token if present;
   // empty/null means "clear the stored value".
   const data: IntegrationSettingPatch = { ...patch };
-  if (patch.twilioAuthToken !== undefined) {
-    data.twilioAuthToken = patch.twilioAuthToken ? encrypt(patch.twilioAuthToken) : null;
+  for (const f of ENCRYPTED_FIELDS) {
+    const val = (patch as Record<string, unknown>)[f];
+    if (val !== undefined) {
+      (data as Record<string, unknown>)[f] =
+        typeof val === "string" && val.length > 0 ? encrypt(val) : null;
+    }
   }
 
   // Upsert: a row may not exist yet for new businesses.
@@ -67,17 +85,12 @@ export async function updateIntegrationSetting(
     update: data,
   });
 
-  return {
-    ...row,
-    twilioAuthToken: row.twilioAuthToken ? decrypt(row.twilioAuthToken) : null,
-  };
+  return decryptRow(row);
 }
 
 // Convenience for twilio.ts: returns decrypted Twilio creds for a business,
 // or null if the tenant hasn't configured their own Twilio account.
-export async function getTwilioCredsForBusiness(
-  businessId: string,
-): Promise<{
+export async function getTwilioCredsForBusiness(businessId: string): Promise<{
   accountSid: string;
   authToken: string;
   phoneNumber: string;

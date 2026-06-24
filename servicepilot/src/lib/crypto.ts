@@ -116,8 +116,8 @@ export function isPlaintext(stored: string | null | undefined): boolean {
 export function maskSecret(stored: string | null | undefined): string {
   if (!stored) return "";
   // For display, we don't decrypt — just show last 4 of whatever is stored.
-  // For "v1:..." ciphertext this still gives a stable identifier users can
-  // recognise across page loads without us ever exposing the plaintext.
+  // Callers pass the already-decrypted secret value, so this masks the real
+  // last 4 characters. We never log or return the full secret here.
   const tail = stored.slice(-4);
   return "••••••••" + tail;
 }
